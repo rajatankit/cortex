@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+import asyncio
+import tempfile
+import os
+from typing import Optional
+
+import edge_tts
+import sounddevice as sd
+import numpy as np
+from faster_whisper import WhisperModel
+
+
+class VoiceInterface:
+    """
+    Offline Voice Interface for CORTEX.
+
+    - Speech-to-Text  → faster-whisper
+    - Text-to-Speech  → edge-tts
+
+    This class does NOT execute tools or bypass security.
+    It only converts speech ↔ text.
+    """
+
+    def __init__(
+        self,
+        model_size: str = "base",
+        device: str = "cpu",
+        compute_type: str = "int8",
+        voice: str = "en-US-GuyNeural",   # Natural male voice
+        sample_rate: int = 16000,
+    ):
+        self.sample_rate = sample_rate
+        self.voice = voice
+
+        print("[VoiceInterface] Loading Whisper model... (first time thoda time lagega)")
+        self.model = WhisperModel(
+            model_size,
+            device=device,
+            compute_type=compute_type,
+        )
+        print("[VoiceInterface] Model loaded successfully.")
+
+    # =========================================================
+    # SPEECH → TEXT
+    # =========================================================
+
+    def listen(self, duration: float = 6.0) -> str:
+        """
+        Record audio from microphone and convert to text.
+        """
+        print(f"\n🎤 Listening... ({duration} seconds)")
+
+        recording = sd.rec(
+            int(duration * self.sample_rate),
+            samplerate=self.sample_rate,
+            channels=1,
+            dtype="float32",
+        )
+        sd.wait()
+
+        audio = np.squeeze(recording)
+
+        segments, _ = self.model.transcribe(
+            audio,
+            language="en",          # baad mein "hi" bhi support kar sakte hain
+            beam_size=5,
+        )
+
+        text = " ".join([segment.text.strip() for segment in segments]).strip()
+
+        if text:
+            print(f"📝 You said: {text}")
+        else:
+            print("📝 (No speech detected)")
+
+        return text
+
+    # =========================================================
+    # TEXT → SPEECH
+    # =========================================================
+
+    async def speak(self, text: str) -> None:
+        """
+        Convert text to speech and play it.
+        """
+        if not text or not text.strip():
+            return
+
+        print(f"🔊 CORTEX: {text}")
+
+        # Generate speech
+        communicate = edge_tts.Communicate(text, self.voice)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
+            tmp_path = tmp.name
+
+        await communicate.save(tmp_path)
+
+        # Play audio
+        data, fs = sd.read(tmp_path)
+        sd.play(data, fs)
+        sd.wait()
+
+        # Cleanup
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+    def speak_sync(self, text: str) -> None:
+        """
+        Synchronous wrapper for speak().
+        """
+        asyncio.run(self.speak(text))

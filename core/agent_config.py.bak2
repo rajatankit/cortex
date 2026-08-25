@@ -1,0 +1,146 @@
+﻿from dataclasses import dataclass
+from typing import Tuple
+
+from core.permissions import RiskLevel
+
+
+@dataclass(frozen=True)
+class AgentConfig:
+    agent_id: str
+    name: str
+    role: str
+    actions: Tuple[Tuple[str, RiskLevel], ...]
+
+
+AGENT_CONFIGS = (
+    # ========================================================
+    # ARIA — Tournament Management
+    # ========================================================
+    AgentConfig(
+        agent_id="ARIA",
+        name="Aria",
+        role="Tournament Management",
+        actions=(
+            ("read_tournament", RiskLevel.LOW),
+            ("create_tournament", RiskLevel.HIGH),
+            ("update_tournament", RiskLevel.MEDIUM),
+            ("manage_tournament", RiskLevel.MEDIUM),
+        ),
+    ),
+
+    # ========================================================
+    # ELARA — Player Information
+    # ========================================================
+    AgentConfig(
+        agent_id="ELARA",
+        name="Elara",
+        role="Player Information",
+        actions=(
+            ("read_player_data", RiskLevel.LOW),
+            ("update_player_data", RiskLevel.MEDIUM),
+        ),
+    ),
+
+    # ========================================================
+    # LYRA — Notifications
+    # ========================================================
+    AgentConfig(
+        agent_id="LYRA",
+        name="Lyra",
+        role="Notifications",
+        actions=(
+            ("send_notification", RiskLevel.MEDIUM),
+            ("read_notifications", RiskLevel.LOW),
+            ("read_notification_logs", RiskLevel.LOW),
+            ("manage_notifications", RiskLevel.MEDIUM),
+        ),
+    ),
+
+    # ========================================================
+    # VAULT — Protected Room / Sensitive Data
+    # ========================================================
+    AgentConfig(
+        agent_id="VAULT",
+        name="Vault",
+        role="Protected Room",
+        actions=(
+            ("read_room_data", RiskLevel.LOW),
+            ("store_room_data", RiskLevel.HIGH),
+            ("update_room_data", RiskLevel.HIGH),
+        ),
+    ),
+
+    # ========================================================
+    # ORION — Match Operations
+    # ========================================================
+    AgentConfig(
+        agent_id="ORION",
+        name="Orion",
+        role="Match Operations",
+        actions=(
+            ("read_match_data", RiskLevel.LOW),
+            ("update_match_data", RiskLevel.MEDIUM),
+            ("verify_match", RiskLevel.HIGH),
+        ),
+    ),
+
+    # ========================================================
+    # NOVA — Finance
+    # ========================================================
+    AgentConfig(
+        agent_id="NOVA",
+        name="Nova",
+        role="Finance",
+        actions=(
+            ("read_wallet", RiskLevel.LOW),
+            ("read_transaction", RiskLevel.LOW),
+            ("validate_transaction", RiskLevel.MEDIUM),
+            ("read_deposit_status", RiskLevel.LOW),
+            ("read_withdrawal_status", RiskLevel.LOW),
+            ("report_suspicious_transaction", RiskLevel.HIGH),
+        ),
+    ),
+
+    # ========================================================
+    # ATLAS — Coding / Engineering
+    # ========================================================
+    AgentConfig(
+        agent_id="ATLAS",
+        name="Atlas",
+        role="Coding / Engineering",
+        actions=(
+            ("read_code", RiskLevel.LOW),
+            ("modify_code", RiskLevel.HIGH),
+        ),
+    ),
+
+    # ========================================================
+    # SENTINEL — Security / Monitoring
+    # ========================================================
+    AgentConfig(
+        agent_id="SENTINEL",
+        name="Sentinel",
+        role="Security / Monitoring",
+        actions=(
+            ("read_security_events", RiskLevel.LOW),
+            ("security_scan", RiskLevel.MEDIUM),
+            ("block_threat", RiskLevel.CRITICAL),
+        ),
+    ),
+)
+
+
+def get_agent_config(agent_id: str) -> AgentConfig | None:
+    """
+    Return the configuration for the requested agent.
+
+    Agent IDs are normalized to uppercase so callers can use
+    values such as "atlas" or "ATLAS".
+    """
+    normalized_agent_id = agent_id.strip().upper()
+
+    for config in AGENT_CONFIGS:
+        if config.agent_id == normalized_agent_id:
+            return config
+
+    return None

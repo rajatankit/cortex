@@ -1,0 +1,261 @@
+"""
+CORTEX Voice Audit
+
+Optional voice announcements for important CORTEX audit events.
+
+Voice is an observational layer only.
+
+It MUST NOT:
+- approve actions
+- deny actions
+- change permissions
+- execute tools
+- modify audit records
+- affect the security pipeline
+
+Voice can be enabled with:
+
+    CORTEX_AUDIT_VOICE=1
+
+The implementation uses pyttsx3 when available.
+If pyttsx3 is unavailable, CORTEX continues normally.
+"""
+
+from __future__ import annotations
+
+import os
+import queue
+import threading
+from typing import Any
+
+
+class VoiceAuditNotifier:
+    """
+    Converts important AuditEvents into spoken notifications.
+
+    Voice is disabled by default.
+
+    Enable with:
+
+        CORTEX_AUDIT_VOICE=1
+
+    Optional voice rate:
+
+        CORTEX_AUDIT_VOICE_RATE=175
+    """
+
+    def __init__(
+        self,
+        enabled: bool | None = None,
+        rate: int | None = None,
+    ):
+        if enabled is None:
+            enabled = os.getenv(
+                "CORTEX_AUDIT_VOICE",
+                "0",
+            ).strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+
+        self.enabled = bool(enabled)
+
+        try:
+            self.rate = int(
+                rate
+                if rate is not None
+                else os.getenv(
+                    "CORTEX_AUDIT_VOICE_RATE",
+                    "175",
+                )
+            )
+        except (TypeError, ValueError):
+            self.rate = 175
+
+        self._queue: queue.Queue[str | None] = queue.Queue()
+        self._worker: threading.Thread | None = None
+        self._startup_lock = threading.Lock()
+
+        if self.enabled:
+            self._start_worker()
+
+    # ========================================================
+    # WORKER
+    # ========================================================
+
+    def _start_worker(self) -> None:
+        if not self.enabled:
+            return
+
+        with self._startup_lock:
+            if (
+                self._worker is not None
+                and self._worker.is_alive()
+            ):
+                return
+
+            self._worker = threading.Thread(
+                target=self._worker_loop,
+                name="CORTEX-Voice-Audit",
+                daemon=True,
+            )
+
+            self._worker.start()
+
+    def _worker_loop(self) -> None:
+        engine = None
+
+        try:
+            import pyttsx3
+
+            engine = pyttsx3.init()
+
+            try:
+                engine.setProperty(
+                    "rate",
+                    self.rate,
+                )
+            except Exception:
+                pass
+
+        except Exception:
+            # pyttsx3 unavailable or speech engine unavailable.
+            # Voice simply becomes unavailable.
+            return
+
+        while True:
+            text = self._queue.get()
+
+            try:
+                if text is None:
+                    return
+
+                if not text.strip():
+                    continue
+
+                engine.say(text)
+                engine.runAndWait()
+
+            except Exception:
+                # Never allow voice errors to affect CORTEX.
+                pass
+
+            finally:
+                self._queue.task_done()
+
+    # ========================================================
+    # AUDIT EVENT -> SPOKEN MESSAGE
+    # ========================================================
+
+    def notify(self, event: Any) -> None:
+        """
+        Queue an AuditEvent for voice output.
+
+        This method intentionally returns immediately.
+        """
+
+        if not self.enabled:
+            return
+
+        self._start_worker()
+
+        if (
+            self._worker is None
+            or not self._worker.is_alive()
+        ):
+            return
+
+        text = self._build_message(event)
+
+        if text:
+            try:
+                self._queue.put_nowait(text)
+            except Exception:
+                pass
+
+    # ========================================================
+    # MESSAGE BUILDER
+    # ========================================================
+
+    @staticmethod
+    def _build_message(event: Any) -> str:
+        agent_id = str(
+            getattr(event, "agent_id", "UNKNOWN")
+        )
+
+        action = str(
+            getattr(event, "action", "UNKNOWN")
+        )
+
+        decision = str(
+            getattr(event, "decision", "UNKNOWN")
+        ).upper()
+
+        success = bool(
+            getattr(event, "success", False)
+        )
+
+        # ----------------------------------------------------
+        # SECURITY DECISION ANNOUNCEMENTS
+        # ----------------------------------------------------
+
+        if decision == "ALLOW":
+            prefix = "Action allowed."
+
+        elif decision == "REVIEW":
+            prefix = "Approval required."
+
+        elif decision == "DENY":
+            prefix = "Action denied."
+
+        elif decision == "BLOCK":
+            prefix = "Security block triggered."
+
+        else:
+            prefix = f"Decision {decision.lower()}."
+
+        # ----------------------------------------------------
+        # EXECUTION RESULT
+        # ----------------------------------------------------
+
+        if success:
+            result = "Execution successful."
+        else:
+            result = "Execution failed."
+
+        return (
+            f"Cortex audit. "
+            f"Agent {agent_id}. "
+            f"Action {action}. "
+            f"{prefix} "
+            f"{result}"
+        )
+
+    # ========================================================
+    # CONTROL
+    # ========================================================
+
+    def enable(self) -> None:
+        self.enabled = True
+        self._start_worker()
+
+    def disable(self) -> None:
+        self.enabled = False
+
+    def stop(self) -> None:
+        """
+        Stop the voice worker gracefully.
+        """
+
+        if (
+            self._worker is None
+            or not self._worker.is_alive()
+        ):
+            return
+
+        try:
+            self._queue.put_nowait(None)
+        except Exception:
+            pass

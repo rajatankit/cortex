@@ -1,0 +1,206 @@
+﻿"""
+CORTEX VAULT tools.
+
+Protected Battle Crown room-data integration.
+Sensitive room credentials are handled only through the
+protected CORTEX -> Battle Crown bridge.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import urllib.request
+from typing import Any, Dict
+
+from .tool import Tool, ToolRisk
+
+
+BATTLE_CROWN_BRIDGE_URL = os.getenv(
+    "BATTLE_CROWN_BRIDGE_URL",
+    "http://localhost:3000",
+)
+
+BATTLE_CROWN_BRIDGE_TOKEN = os.getenv(
+    "BATTLE_CROWN_BRIDGE_TOKEN",
+    "",
+)
+
+
+def _normalize_bridge_response(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Battle Crown's bridge (route.js) returns room data under the
+    key "data". CORTEX's tool contract expects "room". This adapts
+    the wire format without touching the live Battle Crown route.
+    Responses without a "data" key (errors, not_found) pass through
+    unchanged.
+    """
+    if not isinstance(payload, dict):
+        return payload
+
+    normalized = dict(payload)
+
+    if "data" in normalized and "room" not in normalized:
+        normalized["room"] = normalized.pop("data")
+
+    return normalized
+
+
+async def _call_battle_crown(
+    action: str,
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+
+    if not BATTLE_CROWN_BRIDGE_TOKEN:
+        return {
+            "status": "error",
+            "message": "BATTLE_CROWN_BRIDGE_TOKEN is not configured",
+        }
+
+    payload = json.dumps({
+        "action": action,
+        "context": context,
+    }).encode("utf-8")
+
+    request = urllib.request.Request(
+        f"{BATTLE_CROWN_BRIDGE_URL}/api/cortex/rooms",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {BATTLE_CROWN_BRIDGE_TOKEN}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            data = response.read().decode("utf-8")
+            return _normalize_bridge_response(json.loads(data))
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": str(error),
+        }
+
+
+async def read_room_data(
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+
+    room_id = context.get("room_id")
+
+    if not room_id:
+        return {
+            "status": "error",
+            "message": "room_id is required",
+        }
+
+    return await _call_battle_crown(
+        "read_room_data",
+        {
+            "room_id": room_id,
+        },
+    )
+
+
+async def store_room_data(
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+
+    room_id = context.get("room_id")
+    tournament_id = context.get("tournament_id")
+    password = context.get("password")
+    game = context.get("game")
+    status = context.get("status")
+    capacity = context.get("capacity")
+
+    if not room_id:
+        return {
+            "status": "error",
+            "message": "room_id is required",
+        }
+
+    if not tournament_id:
+        return {
+            "status": "error",
+            "message": "tournament_id is required",
+        }
+
+    if not password:
+        return {
+            "status": "error",
+            "message": "password is required",
+        }
+
+    return await _call_battle_crown(
+        "store_room_data",
+        {
+            "room_id": room_id,
+            "tournament_id": tournament_id,
+            "password": password,
+            "game": game,
+            "status": status,
+            "capacity": capacity,
+        },
+    )
+
+
+async def update_room_data(
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+
+    room_id = context.get("room_id")
+    updates = context.get("updates", {})
+
+    if not room_id:
+        return {
+            "status": "error",
+            "message": "room_id is required",
+        }
+
+    if not isinstance(updates, dict):
+        return {
+            "status": "error",
+            "message": "updates must be a dictionary",
+        }
+
+    return await _call_battle_crown(
+        "update_room_data",
+        {
+            "room_id": room_id,
+            "updates": updates,
+        },
+    )
+
+
+VAULT_TOOLS = (
+    Tool(
+        name="store_room_data",
+        description="Stores protected Battle Crown room data.",
+        required_action="store_room_data",
+        risk=ToolRisk.HIGH,
+        handler=store_room_data,
+    ),
+    Tool(
+        name="read_room_data",
+        description="Reads protected Battle Crown room data.",
+        required_action="read_room_data",
+        risk=ToolRisk.MEDIUM,
+        handler=read_room_data,
+    ),
+    Tool(
+        name="update_room_data",
+        description="Updates protected Battle Crown room data.",
+        required_action="update_room_data",
+        risk=ToolRisk.HIGH,
+        handler=update_room_data,
+    ),
+)
+
+
+def register_vault_tools(tool_registry) -> None:
+
+    for tool in VAULT_TOOLS:
+        if not tool_registry.exists(tool.name):
+            tool_registry.register(tool)

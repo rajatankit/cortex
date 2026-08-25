@@ -1,0 +1,145 @@
+﻿"""
+CORTEX Notification Tools
+Battle Crown notification integration.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any, Dict
+
+from .tool import Tool, ToolRisk
+
+
+BATTLE_CROWN_BRIDGE_URL = os.getenv(
+    "BATTLE_CROWN_BRIDGE_URL",
+    "http://localhost:3000",
+)
+
+BATTLE_CROWN_BRIDGE_TOKEN = os.getenv(
+    "BATTLE_CROWN_BRIDGE_TOKEN",
+    "",
+)
+
+
+async def _call_battle_crown(
+    action: str,
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+
+    if not BATTLE_CROWN_BRIDGE_TOKEN:
+        return {
+            "status": "error",
+            "message": "BATTLE_CROWN_BRIDGE_TOKEN is not configured",
+        }
+
+    import urllib.request
+    import json
+
+    payload = json.dumps({
+        "action": action,
+        "context": context,
+    }).encode("utf-8")
+
+    request = urllib.request.Request(
+        f"{BATTLE_CROWN_BRIDGE_URL}/api/cortex/notifications",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {BATTLE_CROWN_BRIDGE_TOKEN}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            data = response.read().decode("utf-8")
+            return json.loads(data)
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": str(error),
+        }
+
+
+async def send_notification(
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+
+    player_id = context.get("player_id")
+    message = context.get("message")
+    title = context.get("title", "Battle Crown")
+
+    if not player_id:
+        return {
+            "status": "error",
+            "message": "player_id is required",
+        }
+
+    if not message:
+        return {
+            "status": "error",
+            "message": "message is required",
+        }
+
+    return await _call_battle_crown(
+        "send_personal_notification",
+        {
+            "player_id": player_id,
+            "title": title,
+            "message": message,
+        },
+    )
+
+
+async def manage_notifications(
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+
+    return await _call_battle_crown(
+        "manage_notifications",
+        context,
+    )
+
+
+async def read_notification_logs(
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+
+    return await _call_battle_crown(
+        "read_notification_logs",
+        context,
+    )
+
+
+NOTIFICATION_TOOLS = (
+    Tool(
+        name="send_notification",
+        description="Sends a personal Battle Crown notification to a player.",
+        required_action="send_notification",
+        risk=ToolRisk.MEDIUM,
+        handler=send_notification,
+    ),
+    Tool(
+        name="manage_notifications",
+        description="Manages an existing Battle Crown notification.",
+        required_action="manage_notifications",
+        risk=ToolRisk.MEDIUM,
+        handler=manage_notifications,
+    ),
+    Tool(
+        name="read_notification_logs",
+        description="Reads Battle Crown notification history.",
+        required_action="read_notification_logs",
+        risk=ToolRisk.LOW,
+        handler=read_notification_logs,
+    ),
+)
+
+
+def register_notification_tools(tool_registry) -> None:
+
+    for tool in NOTIFICATION_TOOLS:
+        if not tool_registry.exists(tool.name):
+            tool_registry.register(tool)

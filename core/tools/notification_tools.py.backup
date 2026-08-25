@@ -1,0 +1,195 @@
+"""
+tools/notification_tools.py
+
+Notification tools for CORTEX.
+
+Current implementation uses an in-memory store only.
+Real Battle-Crown/Firebase notification integration can be
+added later without changing the Tool interface.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+from uuid import uuid4
+
+from .tool import Tool, ToolRisk
+from copy import deepcopy
+
+
+# ============================================================
+# IN-MEMORY NOTIFICATION STORE
+# ============================================================
+
+_NOTIFICATIONS: Dict[str, Dict[str, Any]] = {}
+
+
+# ============================================================
+# SEND NOTIFICATION
+# ============================================================
+
+async def send_notification(
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+
+    player_id = context.get("player_id")
+    message = context.get("message")
+
+    if not player_id:
+        return {
+            "status": "error",
+            "message": "player_id is required",
+        }
+
+    if not message:
+        return {
+            "status": "error",
+            "message": "message is required",
+        }
+
+    notification_id = f"N-{uuid4().hex[:8]}"
+
+    notification = {
+        "id": notification_id,
+        "player_id": player_id,
+        "message": message,
+        "status": "sent",
+    }
+
+    _NOTIFICATIONS[notification_id] = notification
+
+    return {
+        "status": "sent",
+        "notification": notification,
+    }
+
+
+# ============================================================
+# MANAGE NOTIFICATIONS
+# ============================================================
+
+async def manage_notifications(
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+
+    notification_id = context.get("notification_id")
+    updates = context.get("updates", {})
+
+    if not notification_id:
+        return {
+            "status": "error",
+            "message": "notification_id is required",
+        }
+
+    notification = _NOTIFICATIONS.get(notification_id)
+
+    if notification is None:
+        return {
+            "status": "not_found",
+            "notification_id": notification_id,
+        }
+
+    if not isinstance(updates, dict):
+        return {
+            "status": "error",
+            "message": "updates must be a dictionary",
+        }
+
+    notification.update(updates)
+
+    return {
+        "status": "updated",
+        "notification": dict(notification),
+    }
+
+
+# ============================================================
+# READ NOTIFICATION LOGS
+# ============================================================
+
+async def read_notification_logs(
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+
+    notification_id = context.get("notification_id")
+    player_id = context.get("player_id")
+
+    # Read one specific notification
+    if notification_id:
+        notification = _NOTIFICATIONS.get(notification_id)
+
+        if notification is None:
+            return {
+                "status": "not_found",
+                "notification_id": notification_id,
+            }
+
+        return {
+            "status": "ok",
+            "notifications": [dict(notification)],
+        }
+
+    # Read notifications belonging to one player
+    if player_id:
+        notifications = [
+            notification
+            for notification in _NOTIFICATIONS.values()
+            if notification.get("player_id") == player_id
+        ]
+
+        return {
+            "status": "ok",
+            "notifications": dict(notifications),
+        }
+
+    # Read all notification logs
+    return {
+        "status": "ok",
+        "notifications": [dict(notification) for notification in _NOTIFICATIONS.values()],
+    }
+
+
+# ============================================================
+# TOOL DEFINITIONS
+# ============================================================
+
+NOTIFICATION_TOOLS = (
+    Tool(
+        name="send_notification",
+        description="Sends a notification to a player.",
+        required_action="send_notification",
+        risk=ToolRisk.MEDIUM,
+        handler=send_notification,
+    ),
+    Tool(
+        name="manage_notifications",
+        description="Updates an existing notification.",
+        required_action="manage_notifications",
+        risk=ToolRisk.MEDIUM,
+        handler=manage_notifications,
+    ),
+    Tool(
+        name="read_notification_logs",
+        description="Reads notification history and notification logs.",
+        required_action="read_notification_logs",
+        risk=ToolRisk.LOW,
+        handler=read_notification_logs,
+    ),
+)
+
+
+# ============================================================
+# REGISTRATION
+# ============================================================
+
+def register_notification_tools(tool_registry) -> None:
+
+    for tool in NOTIFICATION_TOOLS:
+
+        if not tool_registry.exists(tool.name):
+            tool_registry.register(tool)
+
+
+
+
+

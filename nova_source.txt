@@ -1,0 +1,1267 @@
+
+===== .\core\agent_config.py =====
+
+from dataclasses import dataclass
+from core.permissions import RiskLevel
+
+
+@dataclass(frozen=True)
+class AgentConfig:
+    agent_id: str
+    name: str
+    role: str
+    actions: tuple[tuple[str, RiskLevel], ...]
+
+
+AGENT_CONFIGS = (
+    AgentConfig(
+        agent_id="ARIA",
+        name="Aria",
+        role="Tournament Management",
+        actions=(
+            ("create_tournament", RiskLevel.HIGH),
+            ("manage_tournament", RiskLevel.MEDIUM),
+            ("read_tournament", RiskLevel.LOW),
+        ),
+    ),
+
+    AgentConfig(
+        agent_id="ELARA",
+        name="Elara",
+        role="Player Information",
+        actions=(
+            ("read_player_data", RiskLevel.LOW),
+            ("update_player_data", RiskLevel.MEDIUM),
+        ),
+    ),
+
+    AgentConfig(
+        agent_id="LYRA",
+        name="Lyra",
+        role="Notifications",
+        actions=(
+            ("send_notification", RiskLevel.MEDIUM),
+            ("manage_notifications",RiskLevel.MEDIUM),
+            ("read_notifications", RiskLevel.LOW),
+        ),
+    ),
+
+    AgentConfig(
+        agent_id="VAULT",
+        name="Vault",
+        role="Protected Room & Sensitive Operational Data",
+        actions=(
+            ("store_room_data", RiskLevel.HIGH),
+            ("read_room_data", RiskLevel.MEDIUM),
+            ("update_room_data", RiskLevel.HIGH),
+        ),
+    ),
+
+    AgentConfig(
+        agent_id="ORION",
+        name="Orion",
+        role="Match Operations",
+        actions=(
+            ("manage_match", RiskLevel.HIGH),
+            ("read_match_data", RiskLevel.LOW),
+        ),
+    ),
+
+    AgentConfig(
+        agent_id="NOVA",
+        name="Nova",
+        role="Finance",
+        actions=(
+            ("read_financial_data", RiskLevel.LOW),
+            ("process_financial_action", RiskLevel.HIGH),
+        ),
+    ),
+
+    AgentConfig(
+        agent_id="ATLAS",
+        name="Atlas",
+        role="Coding & Engineering",
+        actions=(
+            ("read_code", RiskLevel.LOW),
+            ("modify_code", RiskLevel.HIGH),
+        ),
+    ),
+
+    AgentConfig(
+        agent_id="SENTINEL",
+        name="Sentinel",
+        role="Security Guardian",
+        actions=(
+            ("read_security_logs", RiskLevel.LOW),
+            ("security_scan", RiskLevel.MEDIUM),
+            ("security_action", RiskLevel.CRITICAL),
+        ),
+    ),
+)
+
+
+def get_agent_config(agent_id: str) -> AgentConfig | None:
+    for config in AGENT_CONFIGS:
+        if config.agent_id == agent_id:
+            return config
+
+    return None
+
+
+
+
+
+===== .\core\intent_engine.py =====
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Any
+
+
+@dataclass(frozen=True)
+class IntentResult:
+    success: bool
+    agent_id: str
+    action: str
+    context: dict[str, Any]
+    message: str
+
+
+@dataclass(frozen=True)
+class IntentRule:
+    """
+    Immutable natural-language intent rule.
+
+    priority:
+        Higher priority rules are evaluated first.
+
+    phrases:
+        Natural-language phrases that can identify the intent.
+    """
+
+    agent_id: str
+    action: str
+    priority: int
+    phrases: tuple[str, ...]
+
+
+class IntentEngine:
+    """
+    Converts a natural-language CORTEX request into a
+    structured agent/action/context intent.
+
+    SECURITY BOUNDARY
+    -----------------
+    This layer:
+
+        DOES:
+            - Validate the request
+            - Normalize natural language
+            - Identify an agent
+            - Identify an action
+            - Preserve request context
+
+        DOES NOT:
+            - Execute tools
+            - Check permissions
+            - Approve actions
+            - Bypass ApprovalGate
+            - Modify application state
+
+    Execution remains:
+
+        IntentEngine
+            ↓
+        TaskPlanner
+            ↓
+        ToolGateway
+            ↓
+        AgentController
+            ↓
+        PermissionEngine
+            ↓
+        DecisionEngine
+            ↓
+        ApprovalGate
+            ↓
+        Tool
+            ↓
+        AuditLogger
+    """
+
+    def __init__(self) -> None:
+
+        # =========================================================
+        # INTENT RULES
+        # =========================================================
+        #
+        # Higher priority means stronger intent.
+        #
+        # This prevents ambiguous phrases such as:
+        #
+        #     "update player information"
+        #
+        # from being incorrectly classified as:
+        #
+        #     read_player_data
+        #
+        # because "player information" also appears in the
+        # read rule.
+        #
+        # =========================================================
+
+        self._rules: tuple[IntentRule, ...] = (
+
+            # =====================================================
+            # ARIA — TOURNAMENT MANAGEMENT
+            # =====================================================
+
+            IntentRule(
+                agent_id="ARIA",
+                action="create_tournament",
+                priority=100,
+                phrases=(
+                    "create a tournament",
+                    "create tournament",
+                    "create new tournament",
+                    "new tournament",
+                    "make a tournament",
+                    "start a tournament",
+                ),
+            ),
+
+            IntentRule(
+                agent_id="ARIA",
+                action="manage_tournament",
+                priority=90,
+                phrases=(
+                    "update tournament",
+                    "edit tournament",
+                    "change tournament",
+                    "manage tournament",
+                    "modify tournament",
+                    "cancel tournament",
+                    "delete tournament",
+                ),
+            ),
+
+            IntentRule(
+                agent_id="ARIA",
+                action="read_tournament",
+                priority=50,
+                phrases=(
+                    "read tournament",
+                    "check tournament",
+                    "show tournament",
+                    "view tournament",
+                    "list tournaments",
+                    "tournament information",
+                    "tournament details",
+                    "show tournaments",
+                ),
+            ),
+
+            # =====================================================
+            # ELARA — PLAYER INFORMATION
+            # =====================================================
+
+            IntentRule(
+                agent_id="ELARA",
+                action="update_player_data",
+                priority=100,
+                phrases=(
+                    "update player information",
+                    "update player profile",
+                    "update player data",
+                    "edit player information",
+                    "edit player profile",
+                    "edit player data",
+                    "change player information",
+                    "change player profile",
+                    "change player data",
+                    "update player",
+                    "edit player",
+                    "change player",
+                    "modify player",
+                ),
+            ),
+
+            IntentRule(
+                agent_id="ELARA",
+                action="read_player_data",
+                priority=50,
+                phrases=(
+                    "read player",
+                    "check player",
+                    "show player",
+                    "view player",
+                    "player information",
+                    "player profile",
+                    "player data",
+                    "player uid",
+                    "player details",
+                    "show players",
+                    "list players",
+                ),
+            ),
+
+            # =====================================================
+            # LYRA — NOTIFICATIONS
+            # =====================================================
+
+            IntentRule(
+                agent_id="LYRA",
+                action="send_notification",
+                priority=80,
+                phrases=(
+                    "send notification",
+                    "send a notification",
+                    "notify player",
+                    "send alert",
+                    "send message to player",
+                    "notify the player",
+                ),
+            ),
+
+           # =====================================================
+# VAULT — PROTECTED ROOM DATA
+# =====================================================
+
+            IntentRule(
+                agent_id="VAULT",
+                action="store_room_data",
+                priority=100,
+                phrases=(
+                    "store room data",
+                    "store room information",
+                    "save room data",
+                    "save room information",
+                    "store game room",
+                    "save game room",
+                    "protect room data",
+                    "store room password",
+                    "save room password",
+                ),
+            ),
+
+            IntentRule(
+                agent_id="VAULT",
+                action="read_room_data",
+                priority=70,
+                phrases=(
+                    "read room data",
+                    "read room information",
+                    "show room data",
+                    "show room information",
+                    "view room data",
+                    "view room information",
+                    "get room data",
+                    "get room information",
+                    "retrieve room data",
+                    "retrieve room information",
+                ),
+            ),
+
+            IntentRule(
+                agent_id="VAULT",
+                action="update_room_data",
+                priority=90,
+                phrases=(
+                    "update room data",
+                    "update room information",
+                    "change room data",
+                    "change room information",
+                    "modify room data",
+                    "modify room information",
+                    "update room password",
+                    "change room password",
+                ),
+            ),
+            # =====================================================
+            # ORION — MATCH OPERATIONS
+            # =====================================================
+
+            IntentRule(
+                agent_id="ORION",
+                action="manage_match",
+                priority=90,
+                phrases=(
+                    "manage match",
+                    "update match",
+                    "edit match",
+                    "change match",
+                    "modify match",
+                    "match result",
+                    "update match result",
+                    "change match result",
+                    "edit match result",
+                ),
+            ),
+
+            IntentRule(
+                agent_id="ORION",
+                action="read_match_data",
+                priority=50,
+                phrases=(
+                    "read match",
+                    "check match",
+                    "show match",
+                    "view match",
+                    "match information",
+                    "match details",
+                    "match data",
+                    "show matches",
+                    "list matches",
+                ),
+            ),
+
+            # =====================================================
+            # NOVA — FINANCE
+            # =====================================================
+
+            IntentRule(
+                agent_id="NOVA",
+                action="process_financial_action",
+                priority=100,
+                phrases=(
+                    "withdraw money",
+                    "withdraw funds",
+                    "withdraw balance",
+                    "make a withdrawal",
+                    "deposit money",
+                    "deposit funds",
+                    "make a deposit",
+                    "process payment",
+                    "make payment",
+                    "financial transaction",
+                    "process financial action",
+                ),
+            ),
+
+            IntentRule(
+                agent_id="NOVA",
+                action="read_financial_data",
+                priority=50,
+                phrases=(
+                    "wallet balance",
+                    "check wallet",
+                    "show wallet",
+                    "view wallet",
+                    "financial data",
+                    "financial information",
+                    "financial details",
+                    "account balance",
+                    "check balance",
+                ),
+            ),
+
+            # =====================================================
+            # ATLAS — CODING & ENGINEERING
+            # =====================================================
+
+            IntentRule(
+                agent_id="ATLAS",
+                action="modify_code",
+                priority=100,
+                phrases=(
+                    "fix code",
+                    "fix the code",
+                    "modify code",
+                    "change code",
+                    "edit code",
+                    "update code",
+                    "fix bug",
+                    "fix a bug",
+                    "debug code",
+                    "modify the code",
+                    "change the code",
+                ),
+            ),
+
+            IntentRule(
+                agent_id="ATLAS",
+                action="read_code",
+                priority=50,
+                phrases=(
+                    "read code",
+                    "inspect code",
+                    "check code",
+                    "show code",
+                    "view code",
+                    "review code",
+                    "code information",
+                    "code details",
+                ),
+            ),
+
+            # =====================================================
+            # SENTINEL — SECURITY
+            # =====================================================
+
+            IntentRule(
+                agent_id="SENTINEL",
+                action="security_action",
+                priority=110,
+                phrases=(
+                    "security action",
+                    "respond to attack",
+                    "respond to security attack",
+                    "handle security attack",
+                    "take security action",
+                    "block attacker",
+                ),
+            ),
+
+            IntentRule(
+                agent_id="SENTINEL",
+                action="security_scan",
+                priority=90,
+                phrases=(
+                    "security scan",
+                    "scan security",
+                    "scan for threats",
+                    "scan for vulnerabilities",
+                    "security check",
+                    "run security scan",
+                    "check for threats",
+                ),
+            ),
+
+            IntentRule(
+                agent_id="SENTINEL",
+                action="read_security_logs",
+                priority=50,
+                phrases=(
+                    "security logs",
+                    "security events",
+                    "security history",
+                    "read security logs",
+                    "show security logs",
+                    "view security logs",
+                ),
+            ),
+        )
+
+        # =========================================================
+        # PREPARE RULES
+        # =========================================================
+        #
+        # Sort once during initialization.
+        #
+        # Primary:
+        #     priority DESC
+        #
+        # Secondary:
+        #     longest phrase DESC
+        #
+        # This gives explicit high-priority actions precedence
+        # while also preferring more specific phrases.
+        #
+        # =========================================================
+
+        self._ordered_rules = tuple(
+            sorted(
+                self._rules,
+                key=lambda rule: (
+                    -rule.priority,
+                    -max(
+                        (len(self._normalize(phrase)) for phrase in rule.phrases),
+                        default=0,
+                    ),
+                ),
+            )
+        )
+
+    # =============================================================
+    # NORMALIZATION
+    # =============================================================
+
+    @staticmethod
+    def _normalize(text: str) -> str:
+        """
+        Normalize natural-language input.
+
+        Operations:
+            - lowercase
+            - replace punctuation with spaces
+            - collapse repeated whitespace
+            - strip leading/trailing whitespace
+
+        Example:
+
+            "  UPDATE Player Information!!! "
+
+        becomes:
+
+            "update player information"
+        """
+
+        normalized = text.lower().strip()
+
+        # Replace punctuation/symbols with spaces.
+        normalized = re.sub(
+            r"[^a-z0-9\s]",
+            " ",
+            normalized,
+        )
+
+        # Collapse repeated whitespace.
+        normalized = re.sub(
+            r"\s+",
+            " ",
+            normalized,
+        )
+
+        return normalized.strip()
+
+    # =============================================================
+    # PHRASE MATCHING
+    # =============================================================
+
+    @staticmethod
+    def _phrase_matches(
+        text: str,
+        phrase: str,
+    ) -> bool:
+        """
+        Match a complete phrase using word boundaries.
+
+        This avoids accidental substring matches.
+
+        Example:
+
+            "update player"
+
+        matches:
+
+            "update player information"
+
+        but avoids unrelated partial-word matches.
+        """
+
+        normalized_phrase = IntentEngine._normalize(phrase)
+
+        if not normalized_phrase:
+            return False
+
+        pattern = (
+            r"(?<!\w)"
+            + re.escape(normalized_phrase)
+            + r"(?!\w)"
+        )
+
+        return re.search(
+            pattern,
+            text,
+        ) is not None
+
+    # =============================================================
+    # RULE MATCHING
+    # =============================================================
+
+    def _find_matching_rule(
+        self,
+        text: str,
+    ) -> IntentRule | None:
+        """
+        Return the highest-priority matching intent rule.
+        """
+
+        for rule in self._ordered_rules:
+
+            for phrase in rule.phrases:
+
+                if self._phrase_matches(
+                    text=text,
+                    phrase=phrase,
+                ):
+                    return rule
+
+        return None
+
+    # =============================================================
+    # PUBLIC PARSER
+    # =============================================================
+
+    def parse(
+        self,
+        request: str,
+        context: dict[str, Any] | None = None,
+    ) -> IntentResult:
+
+        # ---------------------------------------------------------
+        # 1. EMPTY REQUEST
+        # ---------------------------------------------------------
+
+        if not request or not request.strip():
+            return IntentResult(
+                success=False,
+                agent_id="UNKNOWN",
+                action="UNKNOWN",
+                context=dict(context or {}),
+                message="Request cannot be empty.",
+            )
+
+        # ---------------------------------------------------------
+        # 2. NORMALIZE
+        # ---------------------------------------------------------
+
+        text = self._normalize(request)
+
+        if not text:
+            return IntentResult(
+                success=False,
+                agent_id="UNKNOWN",
+                action="UNKNOWN",
+                context=dict(context or {}),
+                message="Request cannot be empty.",
+            )
+
+        # ---------------------------------------------------------
+        # 3. FIND INTENT
+        # ---------------------------------------------------------
+
+        rule = self._find_matching_rule(text)
+
+        # ---------------------------------------------------------
+        # 4. UNKNOWN INTENT
+        # ---------------------------------------------------------
+
+        if rule is None:
+            return IntentResult(
+                success=False,
+                agent_id="UNKNOWN",
+                action="UNKNOWN",
+                context=dict(context or {}),
+                message="Unable to identify a supported intent.",
+            )
+
+        # ---------------------------------------------------------
+        # 5. SUCCESS
+        # ---------------------------------------------------------
+
+        return IntentResult(
+            success=True,
+            agent_id=rule.agent_id,
+            action=rule.action,
+            context=dict(context or {}),
+            message="Intent identified successfully.",
+        )
+
+    # =============================================================
+    # DEBUG / INSPECTION
+    # =============================================================
+
+    def supported_intents(self) -> tuple[tuple[str, str], ...]:
+        """
+        Return all supported agent/action combinations.
+        """
+
+        return tuple(
+            (rule.agent_id, rule.action)
+            for rule in self._rules
+        )
+
+    def rules_for_agent(
+        self,
+        agent_id: str,
+    ) -> tuple[IntentRule, ...]:
+        """
+        Return all rules belonging to a specific agent.
+        """
+
+        normalized_agent = agent_id.strip().upper()
+
+        return tuple(
+            rule
+            for rule in self._rules
+            if rule.agent_id == normalized_agent
+        )
+
+    def has_action(
+        self,
+        action: str,
+    ) -> bool:
+        """
+        Check whether an action is supported by the intent engine.
+        """
+
+        normalized_action = action.strip()
+
+        return any(
+            rule.action == normalized_action
+            for rule in self._rules
+        )
+
+
+
+
+
+===== .\core\tools\tool.py =====
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Callable
+
+
+class ToolRisk(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+@dataclass(frozen=True)
+class Tool:
+    name: str
+    description: str
+    required_action: str
+    risk: ToolRisk
+    handler: Callable[..., Any]
+
+    async def execute(self, *args, **kwargs) -> Any:
+        return await self.handler(*args, **kwargs)
+
+
+
+
+
+
+===== .\core\tools\tool_registry.py =====
+
+from .tool import Tool
+
+
+class ToolRegistry:
+    """
+    Registry for all CORTEX tools.
+    """
+
+    def __init__(self):
+        self._tools: dict[str, Tool] = {}
+
+    def register(self, tool: Tool) -> None:
+        if tool.name in self._tools:
+            raise ValueError(
+                f"Tool already registered: {tool.name}"
+            )
+
+        self._tools[tool.name] = tool
+
+    def get(self, tool_name: str) -> Tool | None:
+        return self._tools.get(tool_name)
+
+    def exists(self, tool_name: str) -> bool:
+        return tool_name in self._tools
+
+    def list_tools(self) -> list[Tool]:
+        return list(self._tools.values())
+
+    def count(self) -> int:
+        return len(self._tools)
+
+    def find_by_action(self, action: str) -> Tool | None:
+        for tool in self._tools.values():
+            if tool.required_action == action:
+                return tool
+
+        return None
+
+
+
+
+
+
+===== .\core\tools\register_tools.py =====
+
+"""
+tools/register_tools.py
+
+Centralized tool registration for CORTEX. Calls each domain-specific
+registration function so bootstrap only needs a single import/call.
+Individual registration functions already guard against duplicate
+registration via tool_registry.exists(), so this simply delegates.
+"""
+
+from __future__ import annotations
+
+from .tournament_tools import register_tournament_tools
+from .player_tools import register_player_tools
+from .notification_tools import register_notification_tools
+from .vault_tools import register_vault_tools
+from .match_tools import register_match_tools
+
+
+def register_all_tools(tool_registry) -> None:
+    register_tournament_tools(tool_registry)
+    register_player_tools(tool_registry)
+    register_notification_tools(tool_registry)
+    register_vault_tools(tool_registry)
+    register_match_tools(tool_registry)
+
+
+
+
+
+
+===== .\core\tools\match_tools.py =====
+
+"""
+tools/match_tools.py
+
+ORION tools - Battle-Crown match operations.
+In-memory placeholder store only.
+"""
+
+from __future__ import annotations
+from typing import Any, Dict
+
+from .tool import Tool, ToolRisk
+
+_VALID_TRANSITIONS: Dict[str, tuple[str, ...]] = {
+    "scheduled": ("in_progress", "cancelled"),
+    "in_progress": ("completed", "cancelled"),
+    "completed": (),
+    "cancelled": (),
+}
+
+_MATCHES: Dict[str, Dict[str, Any]] = {
+    "M1": {
+        "id": "M1",
+        "tournament_id": "T1",
+        "status": "scheduled",
+        "result": None,
+    },
+}
+
+
+async def read_match_data(context: Dict[str, Any]) -> Dict[str, Any]:
+    match_id = context.get("match_id")
+
+    if match_id:
+        match = _MATCHES.get(match_id)
+        if match is None:
+            return {"status": "not_found", "match_id": match_id}
+        return {"status": "ok", "match": dict(match)}
+
+    return {"status": "ok", "matches": [dict(m) for m in _MATCHES.values()]}
+
+
+async def manage_match(context: Dict[str, Any]) -> Dict[str, Any]:
+    match_id = context.get("match_id")
+    updates = context.get("updates", {})
+
+    if not match_id:
+        return {"status": "error", "message": "match_id is required"}
+
+    match = _MATCHES.get(match_id)
+    if match is None:
+        return {"status": "not_found", "match_id": match_id}
+
+    if not isinstance(updates, dict):
+        return {"status": "error", "message": "updates must be a dictionary"}
+
+    new_status = updates.get("status")
+    if new_status is not None:
+        current_status = match["status"]
+        allowed_next = _VALID_TRANSITIONS.get(current_status, ())
+        if new_status != current_status and new_status not in allowed_next:
+            return {
+                "status": "error",
+                "message": (
+                    f"Invalid match state transition: "
+                    f"{current_status} -> {new_status}"
+                ),
+            }
+
+    match.update(updates)
+    return {"status": "updated", "match": dict(match)}
+
+
+MATCH_TOOLS = (
+    Tool(
+        name="read_match_data",
+        description="Reads one or all matches.",
+        required_action="read_match_data",
+        risk=ToolRisk.LOW,
+        handler=read_match_data,
+    ),
+    Tool(
+        name="manage_match",
+        description=(
+            "Updates match status/result with valid-transition checking."
+        ),
+        required_action="manage_match",
+        risk=ToolRisk.HIGH,
+        handler=manage_match,
+    ),
+)
+
+
+def register_match_tools(tool_registry) -> None:
+    for tool in MATCH_TOOLS:
+        if not tool_registry.exists(tool.name):
+            tool_registry.register(tool)
+
+===== .\core\tools\vault_tools.py =====
+
+"""
+tools/vault_tools.py
+
+VAULT tools - protected/sensitive game-room data.
+
+Current implementation uses an in-memory store only. Real
+Battle-Crown/database integration can be added later without
+changing the Tool interface.
+
+SENSITIVE DATA HANDLING:
+Room records may include a "password" field. No handler here calls
+AuditLogger directly. CORTEX's existing pipeline only ever audits
+the natural-language task string (via AgentController) and never
+tool context/results (ToolGateway._execute_tool has no audit call
+at all) - so room passwords are never written to the audit trail as
+long as they aren't typed into the request text itself.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from .tool import Tool, ToolRisk
+
+
+# ============================================================
+# IN-MEMORY PROTECTED ROOM STORE
+# ============================================================
+
+_ROOMS: Dict[str, Dict[str, Any]] = {
+    "R1": {
+        "room_id": "R1",
+        "tournament_id": "T1",
+        "password": "s3cr3t-r1",
+        "status": "open",
+        "capacity": 100,
+    },
+}
+
+
+# ============================================================
+# READ ROOM DATA
+# ============================================================
+
+async def read_room_data(context: Dict[str, Any]) -> Dict[str, Any]:
+
+    room_id = context.get("room_id")
+
+    if not room_id:
+        return {
+            "status": "error",
+            "message": "room_id is required",
+        }
+
+    room = _ROOMS.get(room_id)
+
+    if room is None:
+        return {
+            "status": "not_found",
+            "room_id": room_id,
+        }
+
+    return {
+        "status": "ok",
+        "room": dict(room),
+    }
+
+
+# ============================================================
+# STORE ROOM DATA
+# ============================================================
+
+async def store_room_data(context: Dict[str, Any]) -> Dict[str, Any]:
+
+    room_id = context.get("room_id")
+    password = context.get("password")
+    tournament_id = context.get("tournament_id")
+    game = context.get("game")
+
+    if not room_id:
+        return {
+            "status": "error",
+            "message": "room_id is required",
+        }
+
+    if room_id in _ROOMS:
+        return {
+            "status": "error",
+            "message": "room_id already exists",
+            "room_id": room_id,
+        }
+
+    room = {
+        "room_id": room_id,
+        "password": password,
+        "tournament_id": tournament_id,
+        "game": game,
+    }
+
+    _ROOMS[room_id] = room
+
+    return {
+        "status": "stored",
+        "room": dict(room),
+    }
+
+
+# ============================================================
+# UPDATE ROOM DATA
+# ============================================================
+
+async def update_room_data(context: Dict[str, Any]) -> Dict[str, Any]:
+
+    room_id = context.get("room_id")
+    updates = context.get("updates", {})
+
+    if not room_id:
+        return {
+            "status": "error",
+            "message": "room_id is required",
+        }
+
+    room = _ROOMS.get(room_id)
+
+    if room is None:
+        return {
+            "status": "not_found",
+            "room_id": room_id,
+        }
+
+    if not isinstance(updates, dict):
+        return {
+            "status": "error",
+            "message": "updates must be a dictionary",
+        }
+
+    room.update(updates)
+
+    return {
+        "status": "updated",
+        "room": dict(room),
+    }
+
+
+# ============================================================
+# TOOL DEFINITIONS
+# ============================================================
+
+VAULT_TOOLS = (
+    Tool(
+        name="store_room_data",
+        description=(
+            "Stores protected room data (room id, credentials, "
+            "tournament binding)."
+        ),
+        required_action="store_room_data",
+        risk=ToolRisk.HIGH,
+        handler=store_room_data,
+    ),
+    Tool(
+        name="read_room_data",
+        description=(
+            "Reads protected room data (room id, status, capacity, "
+            "credentials)."
+        ),
+        required_action="read_room_data",
+        risk=ToolRisk.MEDIUM,
+        handler=read_room_data,
+    ),
+    Tool(
+        name="update_room_data",
+        description=(
+            "Updates protected room data, including sensitive fields "
+            "such as the room password."
+        ),
+        required_action="update_room_data",
+        risk=ToolRisk.HIGH,
+        handler=update_room_data,
+    ),
+)
+
+
+# ============================================================
+# REGISTRATION
+# ============================================================
+
+def register_vault_tools(tool_registry) -> None:
+
+    for tool in VAULT_TOOLS:
+
+        if not tool_registry.exists(tool.name):
+            tool_registry.register(tool)
+
+===== .\core\agents\nova.py =====
+
+from typing import Any
+from core.agent import AgentResult, BaseAgent
+
+
+class NovaAgent(BaseAgent):
+    """
+    NOVA — CORTEX Finance Agent.
+
+    Handles finance-related tasks explicitly routed
+    through the CORTEX control layer.
+    """
+
+    agent_id = "NOVA"
+    name = "Nova"
+    role = "Finance"
+
+    async def handle(
+        self,
+        task: str,
+        context: dict[str, Any] | None = None,
+    ) -> AgentResult:
+
+        return AgentResult(
+            success=True,
+            agent=self.agent_id,
+            message=f"NOVA handled: {task}",
+            data=context or {},
+        )
+
+
+
+
+
+===== .\core\test_nova.py =====
+
+import asyncio
+from core.agents.nova import NovaAgent
+
+
+async def main():
+
+    nova = NovaAgent()
+
+    print("NOVA INFO:")
+    print(nova.info())
+
+    result = await nova.handle(
+        task="Review financial data",
+        context={
+            "source": "nova_test",
+        },
+    )
+
+    print("\nNOVA RESULT:")
+    print(result)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
+
+
