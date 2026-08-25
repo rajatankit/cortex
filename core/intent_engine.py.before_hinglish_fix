@@ -108,24 +108,12 @@ class IntentEngine:
                 action="create_tournament",
                 priority=100,
                 phrases=(
-                    "tournament bana",
-                    "tournament banao",
-                    "tournament bana do",
-                    "tournament bana de",
-                    "naya tournament bana",
-                    "naya tournament banao",
-                    "naya tournament bana do",
-                    "ek tournament bana",
-                    "ek naya tournament banao",
-                    "tournament create kar",
-                    "tournament create karo",
-                    "tournament create kar do",
-                    "tournament start kar",
-                    "tournament start karo",
-                    "tournament shuru kar",
-                    "tournament shuru karo",
-                    "tournament add kar",
-                    "tournament add karo",
+                    "create a tournament",
+                    "create tournament",
+                    "create new tournament",
+                    "new tournament",
+                    "make a tournament",
+                    "start a tournament",
                 ),
             ),
 
@@ -134,22 +122,13 @@ class IntentEngine:
                 action="manage_tournament",
                 priority=90,
                 phrases=(
-                    "tournament update kar",
-                    "tournament update karo",
-                    "tournament update kar do",
-                    "tournament edit kar",
-                    "tournament edit karo",
-                    "tournament change kar",
-                    "tournament change karo",
-                    "tournament cancel kar",
-                    "tournament cancel karo",
-                    "tournament band kar",
-                    "tournament band karo",
-                    "tournament modify kar",
-                    "tournament modify karo",
-                    "tournament ko update karo",
-                    "tournament ki details badlo",
-                    "tournament ka time change karo",
+                    "update tournament",
+                    "edit tournament",
+                    "change tournament",
+                    "manage tournament",
+                    "modify tournament",
+                    "cancel tournament",
+                    "delete tournament",
                 ),
             ),
 
@@ -158,27 +137,14 @@ class IntentEngine:
                 action="read_tournament",
                 priority=50,
                 phrases=(
-                    "tournament check kar",
-                    "tournament check karo",
-                    "tournament check kar do",
-                    "tournament dikha",
-                    "tournament dikhao",
-                    "tournament dikha do",
-                    "tournament bata",
-                    "tournament batao",
-                    "tournament bata do",
-                    "tournament dekh",
-                    "tournament dekho",
-                    "tournament dekh lo",
-                    "tournament ki details",
-                    "tournament ki details batao",
-                    "tournament ki information",
-                    "tournament ki jaankari",
-                    "tournament ki jaankari do",
-                    "tournament ka status",
-                    "tournament ka status batao",
-                    "tournament ka status kya hai",
-                    "tournament ke baare me batao",
+                    "read tournament",
+                    "check tournament",
+                    "show tournament",
+                    "view tournament",
+                    "list tournaments",
+                    "tournament information",
+                    "tournament details",
+                    "show tournaments",
                 ),
             ),
 
@@ -191,20 +157,19 @@ class IntentEngine:
                 action="update_player_data",
                 priority=100,
                 phrases=(
-                    "player update kar",
-                    "player update karo",
-                    "player update kar do",
-                    "player ka data update kar",
-                    "player ka data update karo",
-                    "player ki details update kar",
-                    "player ki details update karo",
-                    "player profile update kar",
-                    "player profile update karo",
-                    "player edit kar",
-                    "player edit karo",
-                    "player ki jaankari badlo",
-                    "player ka data badlo",
-                    "player ki details change karo",
+                    "update player information",
+                    "update player profile",
+                    "update player data",
+                    "edit player information",
+                    "edit player profile",
+                    "edit player data",
+                    "change player information",
+                    "change player profile",
+                    "change player data",
+                    "update player",
+                    "edit player",
+                    "change player",
+                    "modify player",
                 ),
             ),
 
@@ -213,24 +178,17 @@ class IntentEngine:
                 action="read_player_data",
                 priority=50,
                 phrases=(
-                    "player check kar",
-                    "player check karo",
-                    "player check kar do",
-                    "player dikha",
-                    "player dikhao",
-                    "player dikha do",
-                    "player details batao",
-                    "player ki details",
-                    "player ki details batao",
-                    "player ka data",
-                    "player ka data batao",
-                    "player ki information",
-                    "player ki jaankari",
-                    "player ki jaankari do",
-                    "player profile dikhao",
-                    "player uid batao",
-                    "player ka uid kya hai",
-                    "player ke baare me batao",
+                    "read player",
+                    "check player",
+                    "show player",
+                    "view player",
+                    "player information",
+                    "player profile",
+                    "player data",
+                    "player uid",
+                    "player details",
+                    "show players",
+                    "list players",
                 ),
             ),
 
@@ -249,14 +207,6 @@ class IntentEngine:
                     "send alert",
                     "send message to player",
                     "notify the player",
-                    "notification bhej",
-                    "notification bhejo",
-                    "notification bhej do",
-                    "player ko notify kar",
-                    "player ko notify karo",
-                    "player ko message bhejo",
-                    "alert bhejo",
-                    "player ko alert bhej do",
                 ),
             ),
 
@@ -276,14 +226,6 @@ class IntentEngine:
                     "store room password",
                     "protect room data",
                     "add room data",
-                    "room bana",
-                    "room banao",
-                    "room bana do",
-                    "naya room bana",
-                    "room password save kar",
-                    "room password store karo",
-                    "room data save karo",
-                    "room ki details save karo",
                 ),
             ),
 
@@ -300,12 +242,6 @@ class IntentEngine:
                     "update room password",
                     "change room password",
                     "set room password",
-                    "room update kar",
-                    "room update karo",
-                    "room ka password badlo",
-                    "room password change karo",
-                    "room ki details badlo",
-                    "room edit karo",
                 ),
             ),
 
@@ -314,19 +250,15 @@ class IntentEngine:
                 action="read_room_data",
                 priority=50,
                 phrases=(
-                    "room check kar",
-                    "room check karo",
-                    "room check kar do",
-                    "room dikha",
-                    "room dikhao",
-                    "room dikha do",
-                    "room details batao",
-                    "room ki details",
-                    "room ka data",
-                    "room id batao",
-                    "room ki jaankari do",
-                    "room password batao",
-                    "room ke baare me batao",
+                    "read room",
+                    "check room",
+                    "show room",
+                    "view room",
+                    "room information",
+                    "room details",
+                    "room data",
+                    "room id",
+                    "get room id",
                 ),
             ),
 
@@ -348,12 +280,6 @@ class IntentEngine:
                     "update match result",
                     "change match result",
                     "edit match result",
-                    "match update kar",
-                    "match update karo",
-                    "match ka result update karo",
-                    "match ki details badlo",
-                    "match cancel karo",
-                    "match edit karo",
                 ),
             ),
 
@@ -362,18 +288,15 @@ class IntentEngine:
                 action="read_match_data",
                 priority=50,
                 phrases=(
-                    "match check kar",
-                    "match check karo",
-                    "match check kar do",
-                    "match dikha",
-                    "match dikhao",
-                    "match details batao",
-                    "match ki details",
-                    "match ka data",
-                    "matches dikhao",
-                    "match ki jaankari do",
-                    "match ka status batao",
-                    "match ke baare me batao",
+                    "read match",
+                    "check match",
+                    "show match",
+                    "view match",
+                    "match information",
+                    "match details",
+                    "match data",
+                    "show matches",
+                    "list matches",
                 ),
             ),
 
@@ -391,10 +314,6 @@ class IntentEngine:
                     "flag transaction",
                     "flag suspicious transaction",
                     "report fraud",
-                    "suspicious transaction report karo",
-                    "fraud report karo",
-                    "transaction ko flag karo",
-                    "is transaction ki complaint karo",
                 ),
             ),
 
@@ -406,9 +325,6 @@ class IntentEngine:
                     "validate transaction",
                     "verify transaction",
                     "check transaction validity",
-                    "transaction verify karo",
-                    "transaction validate karo",
-                    "transaction sahi hai ya nahi check karo",
                 ),
             ),
 
@@ -421,10 +337,6 @@ class IntentEngine:
                     "check deposit status",
                     "read deposit status",
                     "deposit information",
-                    "deposit ka status batao",
-                    "deposit check karo",
-                    "mera deposit kaha hai",
-                    "deposit ki jaankari do",
                 ),
             ),
 
@@ -437,10 +349,6 @@ class IntentEngine:
                     "check withdrawal status",
                     "read withdrawal status",
                     "withdrawal information",
-                    "withdrawal ka status batao",
-                    "withdrawal check karo",
-                    "mera withdrawal kaha hai",
-                    "paisa withdraw hua ya nahi batao",
                 ),
             ),
 
@@ -454,10 +362,6 @@ class IntentEngine:
                     "show transaction",
                     "transaction details",
                     "transaction information",
-                    "transaction dikhao",
-                    "transaction ki details batao",
-                    "transaction check karo",
-                    "mera transaction dikhao",
                 ),
             ),
 
@@ -466,20 +370,13 @@ class IntentEngine:
                 action="read_wallet",
                 priority=50,
                 phrases=(
-                    "wallet check kar",
-                    "wallet check karo",
-                    "wallet check kar do",
-                    "wallet dikha",
-                    "wallet dikhao",
-                    "wallet balance batao",
-                    "wallet ka balance batao",
-                    "balance check kar",
-                    "balance check karo",
-                    "balance batao",
-                    "mere wallet ka balance",
-                    "mera balance kitna hai",
-                    "wallet me kitna paisa hai",
-                    "mera paisa kitna hai",
+                    "read wallet",
+                    "check wallet",
+                    "show wallet",
+                    "view wallet",
+                    "wallet balance",
+                    "account balance",
+                    "check balance",
                 ),
             ),
 
@@ -503,11 +400,6 @@ class IntentEngine:
                     "debug code",
                     "modify the code",
                     "change the code",
-                    "code fix karo",
-                    "code update karo",
-                    "bug fix karo",
-                    "code me error thik karo",
-                    "code edit karo",
                 ),
             ),
 
@@ -524,10 +416,6 @@ class IntentEngine:
                     "review code",
                     "code information",
                     "code details",
-                    "code dikhao",
-                    "code check karo",
-                    "code padho",
-                    "code dekho",
                 ),
             ),
 
@@ -546,10 +434,6 @@ class IntentEngine:
                     "handle security attack",
                     "take security action",
                     "block attacker",
-                    "attacker ko block karo",
-                    "security action lo",
-                    "attack ka response do",
-                    "hamle ka jawab do",
                 ),
             ),
 
@@ -558,16 +442,13 @@ class IntentEngine:
                 action="security_scan",
                 priority=90,
                 phrases=(
-                    "security check kar",
-                    "security check karo",
-                    "security scan kar",
-                    "security scan karo",
-                    "threats check kar",
-                    "threat check karo",
-                    "security dekh",
-                    "security scan chalao",
-                    "threats dhundo",
-                    "khatra check karo",
+                    "security scan",
+                    "scan security",
+                    "scan for threats",
+                    "scan for vulnerabilities",
+                    "security check",
+                    "run security scan",
+                    "check for threats",
                 ),
             ),
 
@@ -582,12 +463,10 @@ class IntentEngine:
                     "read security logs",
                     "show security logs",
                     "view security logs",
-                    "security logs dikhao",
-                    "security ki history batao",
-                    "security events dikhao",
                 ),
             ),
         )
+
         # =========================================================
         # PREPARE RULES
         # =========================================================
@@ -764,77 +643,13 @@ class IntentEngine:
             )
 
         # ---------------------------------------------------------
-        # 3. GREETINGS (Human-like conversation)
-        # ---------------------------------------------------------
-
-        greetings = {
-            "hello",
-            "hi",
-            "hey",
-            "hello cortex",
-            "hi cortex",
-            "hey cortex",
-            "namaste",
-            "namaste cortex",
-            "kaise ho",
-            "kya haal hai",
-            "kya haal",
-            "good morning",
-            "good evening",
-            "good night",
-        }
-
-        if text in greetings:
-            return IntentResult(
-                success=True,
-                agent_id="CORTEX",
-                action="greet",
-                context=dict(context or {}),
-                message="Haan bhai, CORTEX online hai. Batao kya karna hai?",
-            )
-
-    # ---------------------------------------------------------
-    # 4. SPECIALIST SWITCHING
-    # ---------------------------------------------------------
-
-        specialist_map = {
-            "talk to aria": ("ARIA", "switch_agent"),
-            "aria se baat": ("ARIA", "switch_agent"),
-            "aria ko bula": ("ARIA", "switch_agent"),
-            "talk to elara": ("ELARA", "switch_agent"),
-            "elara se baat": ("ELARA", "switch_agent"),
-            "talk to lyra": ("LYRA", "switch_agent"),
-            "lyra se baat": ("LYRA", "switch_agent"),
-            "talk to vault": ("VAULT", "switch_agent"),
-            "vault se baat": ("VAULT", "switch_agent"),
-            "talk to orion": ("ORION", "switch_agent"),
-            "orion se baat": ("ORION", "switch_agent"),
-            "talk to nova": ("NOVA", "switch_agent"),
-            "nova se baat": ("NOVA", "switch_agent"),
-            "talk to atlas": ("ATLAS", "switch_agent"),
-            "atlas se baat": ("ATLAS", "switch_agent"),
-            "talk to sentinel": ("SENTINEL", "switch_agent"),
-            "sentinel se baat": ("SENTINEL", "switch_agent"),
-        }
-
-        for phrase, (agent, action) in specialist_map.items():
-            if phrase in text:
-                return IntentResult(
-                    success=True,
-                    agent_id=agent,
-                    action=action,
-                    context=dict(context or {}),
-                    message=f"{agent} ready hai. Boliye kya kaam hai.",
-                )
-
-        # ---------------------------------------------------------
-        # 5. FIND INTENT FROM RULES
+        # 3. FIND INTENT
         # ---------------------------------------------------------
 
         rule = self._find_matching_rule(text)
 
         # ---------------------------------------------------------
-        # 6. UNKNOWN INTENT
+        # 4. UNKNOWN INTENT
         # ---------------------------------------------------------
 
         if rule is None:
@@ -847,7 +662,7 @@ class IntentEngine:
             )
 
         # ---------------------------------------------------------
-        # 7. SUCCESS
+        # 5. SUCCESS
         # ---------------------------------------------------------
 
         return IntentResult(
@@ -857,6 +672,7 @@ class IntentEngine:
             context=dict(context or {}),
             message="Intent identified successfully.",
         )
+
     # =============================================================
     # DEBUG / INSPECTION
     # =============================================================

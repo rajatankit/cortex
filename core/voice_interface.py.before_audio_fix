@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import tempfile
@@ -7,7 +7,6 @@ from typing import Optional
 
 import edge_tts
 import sounddevice as sd
-import pygame
 import numpy as np
 from faster_whisper import WhisperModel
 
@@ -16,11 +15,11 @@ class VoiceInterface:
     """
     Offline Voice Interface for CORTEX.
 
-    - Speech-to-Text  â†’ faster-whisper
-    - Text-to-Speech  â†’ edge-tts
+    - Speech-to-Text  → faster-whisper
+    - Text-to-Speech  → edge-tts
 
     This class does NOT execute tools or bypass security.
-    It only converts speech â†” text.
+    It only converts speech ↔ text.
     """
 
     def __init__(
@@ -28,7 +27,7 @@ class VoiceInterface:
         model_size: str = "base",
         device: str = "cpu",
         compute_type: str = "int8",
-        voice: str = "hi-IN-MadhurNeural",   # Natural male voice
+        voice: str = "en-US-GuyNeural",   # Natural male voice
         sample_rate: int = 16000,
     ):
         self.sample_rate = sample_rate
@@ -43,14 +42,14 @@ class VoiceInterface:
         print("[VoiceInterface] Model loaded successfully.")
 
     # =========================================================
-    # SPEECH â†’ TEXT
+    # SPEECH → TEXT
     # =========================================================
 
     def listen(self, duration: float = 6.0) -> str:
         """
         Record audio from microphone and convert to text.
         """
-        print(f"\nðŸŽ¤ Listening... ({duration} seconds)")
+        print(f"\n🎤 Listening... ({duration} seconds)")
 
         recording = sd.rec(
             int(duration * self.sample_rate),
@@ -64,21 +63,21 @@ class VoiceInterface:
 
         segments, _ = self.model.transcribe(
             audio,
-            # Multilingual mode: Hindi + English + Hinglish
+            language=None,          # baad mein "hi" bhi support kar sakte hain
             beam_size=5,
         )
 
         text = " ".join([segment.text.strip() for segment in segments]).strip()
 
         if text:
-            print(f"ðŸ“ You said: {text}")
+            print(f"📝 You said: {text}")
         else:
-            print("ðŸ“ (No speech detected)")
+            print("📝 (No speech detected)")
 
         return text
 
     # =========================================================
-    # TEXT â†’ SPEECH
+    # TEXT → SPEECH
     # =========================================================
 
     async def speak(self, text: str) -> None:
@@ -88,7 +87,7 @@ class VoiceInterface:
         if not text or not text.strip():
             return
 
-        print(f"ðŸ”Š CORTEX: {text}")
+        print(f"🔊 CORTEX: {text}")
 
         # Generate speech
         communicate = edge_tts.Communicate(text, self.voice)
@@ -98,26 +97,12 @@ class VoiceInterface:
 
         await communicate.save(tmp_path)
 
-        # Play generated MP3 audio
-        try:
-            if not pygame.mixer.get_init():
-                pygame.mixer.init()
+        # Play audio
+        data, fs = sd.read(tmp_path)
+        sd.play(data, fs)
+        sd.wait()
 
-            pygame.mixer.music.load(tmp_path)
-            pygame.mixer.music.play()
-
-            while pygame.mixer.music.get_busy():
-                await asyncio.sleep(0.05)
-
-            pygame.mixer.music.stop()
-
-        finally:
-            # Cleanup
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
-
+        # Cleanup
         try:
             os.remove(tmp_path)
         except Exception:
@@ -128,4 +113,3 @@ class VoiceInterface:
         Synchronous wrapper for speak().
         """
         asyncio.run(self.speak(text))
-

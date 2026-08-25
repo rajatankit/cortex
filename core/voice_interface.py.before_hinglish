@@ -28,7 +28,7 @@ class VoiceInterface:
         model_size: str = "base",
         device: str = "cpu",
         compute_type: str = "int8",
-        voice: str = "hi-IN-MadhurNeural",   # Natural male voice
+        voice: str = "en-US-GuyNeural",   # Natural male voice
         sample_rate: int = 16000,
     ):
         self.sample_rate = sample_rate
@@ -128,4 +128,3 @@ class VoiceInterface:
         Synchronous wrapper for speak().
         """
         asyncio.run(self.speak(text))
-

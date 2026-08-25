@@ -128,4 +128,3 @@ class VoiceInterface:
         Synchronous wrapper for speak().
         """
         asyncio.run(self.speak(text))
-
