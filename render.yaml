@@ -1,4 +1,4 @@
-﻿services:
+services:
   - type: web
     name: cortex
     runtime: python
@@ -9,7 +9,7 @@
 
     envVars:
       - key: PYTHON_VERSION
-        value: 3.13.5
+        value: 3.12.10
 
       - key: CORTEX_BRIDGE_TOKEN
         sync: false
