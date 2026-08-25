@@ -28,6 +28,11 @@ app = FastAPI(
 
 BRIDGE_TOKEN = os.getenv("CORTEX_BRIDGE_TOKEN")
 
+if not BRIDGE_TOKEN:
+    raise RuntimeError(
+        "CORTEX_BRIDGE_TOKEN environment variable is not set."
+    )
+
 
 def verify_bridge_token(
     authorization: str | None,
@@ -53,9 +58,9 @@ def verify_bridge_token(
 # ============================================================
 
 class DispatchRequest(BaseModel):
-    agent_id: str = Field(min_length=1)
-    action: str = Field(min_length=1)
     task: str = Field(min_length=1)
+    agent_id: str | None = None
+    action: str | None = None
     tool_name: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
 
@@ -98,6 +103,12 @@ async def dispatch(
     verify_bridge_token(authorization)
 
     if request.tool_name:
+        if not request.agent_id:
+            raise HTTPException(
+                status_code=400,
+                detail="agent_id is required when tool_name is provided.",
+            )
+
         result = await cortex.tool_gateway.execute(
             agent_id=request.agent_id,
             tool_name=request.tool_name,
@@ -112,16 +123,30 @@ async def dispatch(
             "data": result.data,
         }
 
-    result = await cortex.orchestrator.dispatch(
-        agent_id=request.agent_id,
-        action=request.action,
-        task=request.task,
-        context=request.context,
-    )
+    if request.agent_id and request.action:
+        result = await cortex.orchestrator.dispatch(
+            agent_id=request.agent_id,
+            action=request.action,
+            task=request.task,
+            context=request.context,
+        )
+
+        return {
+            "success": result.success,
+            "agent": result.agent,
+            "message": result.message,
+            "data": result.data,
+        }
+
+    # NATURAL-LANGUAGE FALLBACK: no agent_id/action given (e.g. the
+    # phone/voice command center) - route through the full
+    # IntentEngine -> TaskPlanner -> ToolGateway pipeline exactly
+    # like every other CORTEX entrypoint.
+    result = await cortex.execute_intent(request.task, context=request.context)
 
     return {
         "success": result.success,
-        "agent": result.agent,
+        "agent": result.agent_id,
         "message": result.message,
         "data": result.data,
     }
