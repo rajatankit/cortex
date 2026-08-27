@@ -3,10 +3,15 @@ tools/nova_tools.py
 
 NOVA finance tools for CORTEX.
 
-Development/test implementation only.
+read_wallet now reads REAL data from the Battle Crown "User" table
+in Neon Postgres (the same table the Next.js app uses via Prisma).
+Every other tool below (transactions, deposit/withdrawal status,
+suspicious-transaction reporting) is still sandbox/placeholder data -
+wire those up the same way (see read_wallet as the template) once
+you're ready, most likely against the wallet_transactions and
+withdrawal_requests tables.
 
-No real-money transaction is performed.
-No external payment provider is contacted.
+No write/mutation is ever performed here - every query is a SELECT.
 """
 
 from __future__ import annotations
@@ -14,25 +19,12 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from .tool import Tool, ToolRisk
+from core.db import fetchrow
 
 
 # ============================================================
-# SANDBOX DATA
+# SANDBOX DATA (still used by the tools below read_wallet)
 # ============================================================
-
-_WALLETS: Dict[str, Dict[str, Any]] = {
-    "U1": {
-        "user_id": "U1",
-        "balance": 1000.0,
-        "currency": "INR",
-    },
-    "U2": {
-        "user_id": "U2",
-        "balance": 500.0,
-        "currency": "INR",
-    },
-}
-
 
 _TRANSACTIONS: Dict[str, Dict[str, Any]] = {
     "TXN1": {
@@ -53,37 +45,63 @@ _TRANSACTIONS: Dict[str, Dict[str, Any]] = {
 
 
 # ============================================================
-# READ WALLET
+# READ WALLET  (REAL DATA)
 # ============================================================
 
 async def read_wallet(
     context: Dict[str, Any],
 ) -> Dict[str, Any]:
 
-    user_id = context.get("user_id")
+    # Accept either key: "uid" is what the Next.js voice-command
+    # route actually sends (the Firebase UID); "user_id" is kept as
+    # a fallback so any other existing caller still works.
+    uid = context.get("uid") or context.get("user_id")
 
-    if not user_id:
+    if not uid:
         return {
             "status": "error",
-            "message": "user_id is required",
+            "message": "uid is required",
         }
 
-    wallet = _WALLETS.get(user_id)
+    row = await fetchrow(
+        '''
+        SELECT
+            "uid",
+            "email",
+            "name",
+            "depositWallet",
+            "winningsWallet"
+        FROM "User"
+        WHERE "uid" = $1
+        ''',
+        uid,
+    )
 
-    if wallet is None:
+    if row is None:
         return {
             "status": "not_found",
-            "user_id": user_id,
+            "uid": uid,
         }
 
     return {
         "status": "ok",
-        "wallet": dict(wallet),
+        "wallet": {
+            "uid": row["uid"],
+            "email": row["email"],
+            "name": row["name"],
+            "deposit_wallet": row["depositWallet"],
+            "winnings_wallet": row["winningsWallet"],
+            "total_balance": (
+                (row["depositWallet"] or 0)
+                + (row["winningsWallet"] or 0)
+            ),
+            "currency": "INR",
+        },
     }
 
 
 # ============================================================
-# READ TRANSACTION
+# READ TRANSACTION  (still sandbox - TODO: wire to wallet_transactions)
 # ============================================================
 
 async def read_transaction(
@@ -113,7 +131,7 @@ async def read_transaction(
 
 
 # ============================================================
-# VALIDATE TRANSACTION
+# VALIDATE TRANSACTION  (still sandbox)
 # ============================================================
 
 async def validate_transaction(
@@ -160,7 +178,7 @@ async def validate_transaction(
 
 
 # ============================================================
-# DEPOSIT STATUS
+# DEPOSIT STATUS  (still sandbox)
 # ============================================================
 
 async def read_deposit_status(
@@ -198,7 +216,7 @@ async def read_deposit_status(
 
 
 # ============================================================
-# WITHDRAWAL STATUS
+# WITHDRAWAL STATUS  (still sandbox)
 # ============================================================
 
 async def read_withdrawal_status(
@@ -236,7 +254,7 @@ async def read_withdrawal_status(
 
 
 # ============================================================
-# REPORT SUSPICIOUS TRANSACTION
+# REPORT SUSPICIOUS TRANSACTION  (still sandbox)
 # ============================================================
 
 async def report_suspicious_transaction(
@@ -278,7 +296,7 @@ async def report_suspicious_transaction(
 NOVA_TOOLS = (
     Tool(
         name="read_wallet",
-        description="Reads a user's sandbox wallet balance.",
+        description="Reads a user's real wallet balance from Battle Crown.",
         required_action="read_wallet",
         risk=ToolRisk.LOW,
         handler=read_wallet,

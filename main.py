@@ -1,10 +1,16 @@
 from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import Any
 
 from config.agents import AGENT_DEFINITIONS
 from core.agent import BaseAgent, AgentResult
 from core.agent_registry import AgentRegistry
+from core.agent_controller import AgentController
 from core.orchestrator import Orchestrator
 from core.permissions import PermissionEngine, RiskLevel
+from core.decision import DecisionEngine
+from core.audit_logger import AuditLogger
+from core.approval_gate import ApprovalGate
 
 
 class PlaceholderAgent(BaseAgent):
@@ -35,10 +41,30 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# =============================================================
+# CORE LAYER WIRING
+# =============================================================
+
 registry = AgentRegistry()
-orchestrator = Orchestrator(registry)
 
 permission_engine = PermissionEngine()
+
+decision_engine = DecisionEngine(permission_engine)
+audit_logger = AuditLogger()
+approval_gate = ApprovalGate()
+
+controller = AgentController(
+    registry=registry,
+    decision_engine=decision_engine,
+    audit_logger=audit_logger,
+    approval_gate=approval_gate,
+)
+
+orchestrator = Orchestrator(registry, controller)
+
+# =============================================================
+# PERMISSIONS (dev/testing seed — move to config later)
+# =============================================================
 
 permission_engine.grant(
     "aria",
@@ -52,11 +78,13 @@ permission_engine.grant(
     RiskLevel.LOW,
 )
 
-
 print("CORTEX PERMISSIONS:")
 print(permission_engine.is_allowed("aria", "view_tournament"))
 print(permission_engine.get_risk("aria", "view_tournament"))
 
+# =============================================================
+# AGENT REGISTRATION
+# =============================================================
 
 for agent_id, definition in AGENT_DEFINITIONS.items():
     registry.register(
@@ -67,6 +95,10 @@ for agent_id, definition in AGENT_DEFINITIONS.items():
         )
     )
 
+
+# =============================================================
+# ROUTES
+# =============================================================
 
 @app.get("/health")
 async def health():
@@ -94,9 +126,10 @@ async def agents():
 
 
 @app.post("/api/v1/test-task")
-async def test_task(agent_id: str, task: str):
+async def test_task(agent_id: str, action: str, task: str):
     result = await orchestrator.dispatch(
         agent_id=agent_id,
+        action=action,
         task=task,
     )
 
@@ -128,4 +161,32 @@ async def check_permission(
         "action": action,
         "allowed": allowed,
         "risk": risk.value if risk else None,
+    }
+
+
+# =============================================================
+# DISPATCH ENDPOINT (JSON body, matches your curl usage)
+# =============================================================
+
+class DispatchRequest(BaseModel):
+    agent_id: str
+    action: str
+    task: str
+    context: dict[str, Any] | None = None
+
+
+@app.post("/dispatch")
+async def dispatch(payload: DispatchRequest):
+    result = await orchestrator.dispatch(
+        agent_id=payload.agent_id,
+        action=payload.action,
+        task=payload.task,
+        context=payload.context,
+    )
+
+    return {
+        "success": result.success,
+        "agent": result.agent,
+        "message": result.message,
+        "data": result.data,
     }

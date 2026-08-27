@@ -2,6 +2,13 @@
 tools/player_tools.py
 
 ELARA player-information tools.
+
+read_player_data now reads REAL data from Battle Crown's "User" and
+match_history tables in Neon Postgres. update_player_data is left as
+a sandbox no-op deliberately: writing player data from a voice
+command has no validation/approval step yet, so it should not touch
+production data until that's designed. Wire it up through
+ApprovalGate + a real UPDATE once that's ready.
 """
 
 from __future__ import annotations
@@ -9,7 +16,12 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from .tool import Tool, ToolRisk
+from core.db import fetch, fetchrow
 
+
+# ============================================================
+# SANDBOX DATA (kept only for update_player_data below)
+# ============================================================
 
 _PLAYERS: Dict[str, Dict[str, Any]] = {
     "P1": {
@@ -22,34 +34,107 @@ _PLAYERS: Dict[str, Dict[str, Any]] = {
 }
 
 
+# ============================================================
+# READ PLAYER DATA  (REAL DATA)
+# ============================================================
+
 async def read_player_data(
     context: Dict[str, Any],
 ) -> Dict[str, Any]:
 
-    player_id = context.get("player_id")
+    uid = context.get("uid")
+    name = context.get("name") or context.get("player_name")
 
-    if player_id:
-        player = _PLAYERS.get(player_id)
+    if not uid and not name:
+        return {
+            "status": "error",
+            "message": "uid or name is required",
+        }
 
-        if player is None:
-            return {
-                "status": "not_found",
-                "player_id": player_id,
-            }
+    if uid:
+        user = await fetchrow(
+            '''
+            SELECT
+                "uid", "email", "name", "level", "crowns",
+                "matchesPlayed", "bgmiIgn", "bgmiUid",
+                "ffIgn", "ffUid", "bio"
+            FROM "User"
+            WHERE "uid" = $1
+            ''',
+            uid,
+        )
+
+        if user is None:
+            return {"status": "not_found", "uid": uid}
+
+        recent_matches = await fetch(
+            '''
+            SELECT "tournamentName", "kills", "prizeWon", "status", "createdAt"
+            FROM match_history
+            WHERE "userId" = (SELECT "id" FROM "User" WHERE "uid" = $1)
+            ORDER BY "createdAt" DESC
+            LIMIT 5
+            ''',
+            uid,
+        )
 
         return {
             "status": "ok",
-            "player": dict(player),
+            "player": {
+                "uid": user["uid"],
+                "email": user["email"],
+                "name": user["name"],
+                "level": user["level"],
+                "crowns": user["crowns"],
+                "matches_played": user["matchesPlayed"],
+                "bgmi_ign": user["bgmiIgn"],
+                "free_fire_ign": user["ffIgn"],
+                "bio": user["bio"],
+                "recent_matches": [
+                    {
+                        "tournament": m["tournamentName"],
+                        "kills": m["kills"],
+                        "prize_won": m["prizeWon"],
+                        "status": m["status"],
+                    }
+                    for m in recent_matches
+                ],
+            },
         }
+
+    # Name-based lookup - partial, case-insensitive, capped at 5
+    # matches so a common name doesn't dump the whole table.
+    matches = await fetch(
+        '''
+        SELECT "uid", "name", "level", "crowns", "matchesPlayed"
+        FROM "User"
+        WHERE "name" ILIKE $1
+        LIMIT 5
+        ''',
+        f"%{name}%",
+    )
+
+    if not matches:
+        return {"status": "not_found", "name": name}
 
     return {
         "status": "ok",
         "players": [
-            dict(player)
-            for player in _PLAYERS.values()
+            {
+                "uid": m["uid"],
+                "name": m["name"],
+                "level": m["level"],
+                "crowns": m["crowns"],
+                "matches_played": m["matchesPlayed"],
+            }
+            for m in matches
         ],
     }
 
+
+# ============================================================
+# UPDATE PLAYER DATA  (still sandbox - see module docstring)
+# ============================================================
 
 async def update_player_data(
     context: Dict[str, Any],
@@ -89,7 +174,7 @@ async def update_player_data(
 PLAYER_TOOLS = (
     Tool(
         name="read_player_data",
-        description="Reads one or all players' data.",
+        description="Reads a real player's profile and recent match history.",
         required_action="read_player_data",
         risk=ToolRisk.LOW,
         handler=read_player_data,
