@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 from dotenv import load_dotenv
@@ -170,6 +170,82 @@ async def status(
         ],
         "tool_count": cortex.tool_registry.count(),
         "health": cortex.health_report.summary(),
+    }
+
+
+    # ============================================================
+    # APPROVAL REQUEST MODEL
+    # ============================================================
+
+class ApproveRequest(BaseModel):
+    request_id: str = Field(min_length=1)
+    agent_id: str = Field(min_length=1)
+
+
+# ============================================================
+# LIST PENDING APPROVALS
+# ============================================================
+
+@app.get("/approvals")
+async def list_pending_approvals(
+    authorization: str | None = Header(default=None),
+):
+    verify_bridge_token(authorization)
+
+    pending = cortex.pending_approvals()
+
+    return {
+        "success": True,
+        "pending": [
+            {
+                "request_id": request.request_id,
+                "agent_id": request.agent_id,
+                "action": request.action,
+                "task": request.task,
+                "status": request.status.value,
+                "created_at": request.created_at,
+                "expires_at": request.expires_at,
+            }
+            for request in pending
+        ],
+    }
+
+
+# ============================================================
+# APPROVE + EXECUTE
+# ============================================================
+
+@app.post("/approve")
+async def approve(
+    request: ApproveRequest,
+    authorization: str | None = Header(default=None),
+):
+    verify_bridge_token(authorization)
+
+    existing = cortex.get_approval(request.request_id)
+
+    if existing is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Approval request not found: {request.request_id}",
+        )
+
+    if existing.status.value == "pending":
+        try:
+            cortex.approve_request(request.request_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    result = await cortex.tool_gateway.approve_and_execute(
+        request_id=request.request_id,
+        agent_id=request.agent_id,
+    )
+
+    return {
+        "success": result.success,
+        "agent": result.agent_id,
+        "message": result.message,
+        "data": result.data,
     }
 
 
