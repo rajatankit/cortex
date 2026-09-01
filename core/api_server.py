@@ -120,3 +120,79 @@ async def health():
         "healthy": runtime.health_report.is_healthy(),
         "summary": runtime.health_report.summary(),
     }
+
+
+# ============================================================
+# APPROVAL REQUEST MODEL
+# ============================================================
+
+class ApproveRequest(BaseModel):
+    request_id: str
+    agent_id: str
+
+
+# ============================================================
+# LIST PENDING APPROVALS
+# ============================================================
+
+@app.get("/approvals")
+async def list_pending_approvals(
+    authorization: str | None = Header(default=None),
+):
+    _check_auth(authorization)
+
+    pending = runtime.pending_approvals()
+
+    return {
+        "success": True,
+        "pending": [
+            {
+                "request_id": request.request_id,
+                "agent_id": request.agent_id,
+                "action": request.action,
+                "task": request.task,
+                "status": request.status.value,
+                "created_at": request.created_at,
+                "expires_at": request.expires_at,
+            }
+            for request in pending
+        ],
+    }
+
+
+# ============================================================
+# APPROVE + EXECUTE
+# ============================================================
+
+@app.post("/approve")
+async def approve(
+    body: ApproveRequest,
+    authorization: str | None = Header(default=None),
+):
+    _check_auth(authorization)
+
+    existing = runtime.get_approval(body.request_id)
+
+    if existing is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Approval request not found: {body.request_id}",
+        )
+
+    if existing.status.value == "pending":
+        try:
+            runtime.approve_request(body.request_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    result = await runtime.tool_gateway.approve_and_execute(
+        request_id=body.request_id,
+        agent_id=body.agent_id,
+    )
+
+    return {
+        "success": result.success,
+        "agent_id": result.agent_id,
+        "message": result.message,
+        "data": result.data,
+    }
