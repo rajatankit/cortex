@@ -35,8 +35,3 @@ class ToolRegistry:
                 return tool
 
         return None
-
-
-
-
-
