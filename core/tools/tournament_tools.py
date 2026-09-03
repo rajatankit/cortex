@@ -6,31 +6,47 @@ Modular tool definitions for ARIA (Tournament Management).
 read_tournament reads REAL data from Battle Crown's "tournaments"
 table in Neon Postgres. roomId/roomPassword are deliberately NEVER
 returned here - room credentials are protected data and belong to
-VAULT's read_room_data flow only (see tools/vault_tools.py), which
-goes through a dedicated Battle Crown API rather than a raw query.
+VAULT's read_room_data flow only (see tools/vault_tools.py).
 
-create_tournament now writes a REAL document to the Firestore
-"tournaments" collection (the same collection you create tournaments
-in manually from the Firebase console). Battle Crown's dashboard
-listener then mirrors that document into Postgres via
-/api/tournament/sync, same as it does for anything created manually.
+create_tournament calls Battle Crown hybrid bridge:
+  POST /api/cortex/tournaments
+  → Firestore (website list) + Neon (ops row, optional room secrets)
 
-manage_tournament is still an in-memory sandbox placeholder - editing
-a live tournament (changing prizes, status, etc.) isn't wired to
-Firestore yet.
+manage_tournament is still an in-memory sandbox placeholder.
 """
 
 from __future__ import annotations
+
+import json
+import os
+import urllib.request
 from typing import Any, Dict
+
+from dotenv import load_dotenv
 
 from .tool import Tool, ToolRisk
 from core.db import fetch, fetchrow
-from core.firebase_client import get_firestore_client
 
-# Placeholder in-memory store - still used by manage_tournament below,
-# which remains sandboxed (see docstring).
+load_dotenv()
+
+BATTLE_CROWN_BRIDGE_URL = os.getenv(
+    "BATTLE_CROWN_BRIDGE_URL",
+    "http://localhost:3000",
+).rstrip("/")
+
+BATTLE_CROWN_BRIDGE_TOKEN = os.getenv(
+    "BATTLE_CROWN_BRIDGE_TOKEN",
+    "",
+)
+
+# Placeholder in-memory store - still used by manage_tournament below.
 _TOURNAMENTS: Dict[str, Dict[str, Any]] = {
-    "T1": {"id": "T1", "name": "Summer Cup", "time": "19:00", "status": "scheduled"},
+    "T1": {
+        "id": "T1",
+        "name": "Summer Cup",
+        "time": "19:00",
+        "status": "scheduled",
+    },
 }
 
 
@@ -103,9 +119,6 @@ async def read_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
             status,
         )
     else:
-        # No filter given (e.g. "tournament check karo" with no
-        # specifics) - default to live/upcoming ones, most relevant
-        # first, capped so the spoken summary stays short.
         rows = await fetch(
             f'''
             SELECT {_TOURNAMENT_COLUMNS}
@@ -122,48 +135,123 @@ async def read_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def create_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
-    title = context.get("tournament_name") or context.get("title")
+def _call_create_tournament_bridge(context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calls Battle Crown hybrid API:
+    Firestore (public list) + Neon (ops + optional room secrets).
+    """
+    if not BATTLE_CROWN_BRIDGE_TOKEN:
+        return {
+            "status": "error",
+            "message": "BATTLE_CROWN_BRIDGE_TOKEN is not configured",
+        }
+
+    title = (
+        context.get("tournament_name")
+        or context.get("title")
+        or context.get("name")
+    )
 
     if not title:
-        return {"status": "error", "message": "tournament_name (title) is required"}
+        return {
+            "status": "error",
+            "message": "tournament_name (title) is required",
+        }
 
-    game = context.get("game", "BGMI")
-    map_name = context.get("map")
-    mode = context.get("mode")
-    entry_fee = context.get("entryFee")
-    max_slots = context.get("maxSlots", 100)
-    first_prize = context.get("firstPrize", 0)
-    second_prize = context.get("secondPrize", 0)
-    third_prize = context.get("thirdPrize", 0)
-    kill_reward = context.get("killReward", 5)
-    date = context.get("date") or context.get("time")
-
-    doc_data = {
+    bridge_context = {
         "title": title,
-        "game": game,
-        "map": map_name,
-        "mode": mode,
-        "entryFee": entry_fee,
-        "maxSlots": max_slots,
-        "joinedCount": 0,
-        "status": "upcoming",
-        "firstPrize": first_prize,
-        "secondPrize": second_prize,
-        "thirdPrize": third_prize,
-        "killReward": kill_reward,
-        "date": date,
+        "game": context.get("game") or "Free Fire",
+        "map": context.get("map"),
+        "mode": context.get("mode"),
+        "status": context.get("status") or "upcoming",
+        "capacity": context.get("maxSlots")
+        or context.get("capacity")
+        or 100,
+        "entry_fee": context.get("entryFee")
+        or context.get("entry_fee")
+        or "0",
+        "first_prize": context.get("firstPrize")
+        or context.get("first_prize")
+        or 0,
+        "second_prize": context.get("secondPrize")
+        or context.get("second_prize")
+        or 0,
+        "third_prize": context.get("thirdPrize")
+        or context.get("third_prize")
+        or 0,
+        "kill_reward": context.get("killReward")
+        or context.get("kill_reward")
+        or 5,
+        "room_id": context.get("room_id") or context.get("roomId"),
+        "password": context.get("password")
+        or context.get("room_password")
+        or context.get("roomPassword"),
+        "start_time": context.get("start_time")
+        or context.get("startTime")
+        or context.get("date")
+        or context.get("time"),
     }
 
-    db = get_firestore_client()
-    # auto-generated doc id, same as clicking "Add document" with a
-    # blank id in the Firebase console.
-    _, doc_ref = db.collection("tournaments").add(doc_data)
+    # Drop empty values
+    bridge_context = {
+        k: v
+        for k, v in bridge_context.items()
+        if v is not None and v != ""
+    }
 
-    created = dict(doc_data)
-    created["id"] = doc_ref.id
+    payload = json.dumps({
+        "action": "create_tournament",
+        "context": bridge_context,
+    }).encode("utf-8")
 
-    return {"status": "created", "tournament": created}
+    request = urllib.request.Request(
+        f"{BATTLE_CROWN_BRIDGE_URL}/api/cortex/tournaments",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {BATTLE_CROWN_BRIDGE_TOKEN}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = response.read().decode("utf-8")
+            return json.loads(data)
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": str(error),
+        }
+
+
+async def create_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
+    result = _call_create_tournament_bridge(context)
+
+    # Normalize bridge response for CORTEX / speech layer
+    if result.get("status") == "created":
+        data = result.get("data") or {}
+        return {
+            "status": "created",
+            "message": result.get("message")
+            or "Tournament created successfully",
+            "tournament": {
+                "tournament_id": data.get("tournament_id"),
+                "firestore_id": data.get("firestore_id"),
+                "title": data.get("title"),
+                "game": data.get("game"),
+                "status": data.get("status"),
+                "capacity": data.get("capacity"),
+                "room_id": data.get("room_id"),
+                # password not spoken / not required in public reply
+            },
+        }
+
+    return {
+        "status": result.get("status") or "error",
+        "message": result.get("message") or "Tournament create failed",
+        "raw": result,
+    }
 
 
 async def manage_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
@@ -178,7 +266,7 @@ async def manage_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
         return {"status": "not_found", "tournament_id": tournament_id}
 
     tournament.update(updates)
-    return {"status": "updated", "tournament": dict(tournament),}
+    return {"status": "updated", "tournament": dict(tournament)}
 
 
 TOURNAMENT_TOOLS = (
@@ -191,7 +279,11 @@ TOURNAMENT_TOOLS = (
     ),
     Tool(
         name="create_tournament",
-        description="Creates a new tournament.",
+        description=(
+            "Creates a new Battle Crown tournament on the website and database. "
+            "Use when the user asks to create a tournament, match, or cup "
+            "(e.g. 'tournament bana do', 'naya tournament create karo')."
+        ),
         required_action="create_tournament",
         risk=ToolRisk.HIGH,
         handler=create_tournament,
