@@ -6,3 +6,5 @@ __pycache__/
 *.egg-info/
 core_backup_86_passed/
 core_backup_before_import_fix/
+
+firebase-service-account.json

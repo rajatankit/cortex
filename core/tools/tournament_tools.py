@@ -3,18 +3,21 @@ tools/tournament_tools.py
 
 Modular tool definitions for ARIA (Tournament Management).
 
-read_tournament now reads REAL data from Battle Crown's "tournaments"
+read_tournament reads REAL data from Battle Crown's "tournaments"
 table in Neon Postgres. roomId/roomPassword are deliberately NEVER
 returned here - room credentials are protected data and belong to
 VAULT's read_room_data flow only (see tools/vault_tools.py), which
 goes through a dedicated Battle Crown API rather than a raw query.
 
-create_tournament and manage_tournament are left as in-memory
-sandbox placeholders on purpose: creating/editing a real tournament
-from a voice command has no approval/validation step yet. Wire these
-to real INSERT/UPDATE only after that's designed (they're already
-marked HIGH/MEDIUM risk in ToolRisk, so ApprovalGate is the right
-place to add that gate).
+create_tournament now writes a REAL document to the Firestore
+"tournaments" collection (the same collection you create tournaments
+in manually from the Firebase console). Battle Crown's dashboard
+listener then mirrors that document into Postgres via
+/api/tournament/sync, same as it does for anything created manually.
+
+manage_tournament is still an in-memory sandbox placeholder - editing
+a live tournament (changing prizes, status, etc.) isn't wired to
+Firestore yet.
 """
 
 from __future__ import annotations
@@ -22,9 +25,10 @@ from typing import Any, Dict
 
 from .tool import Tool, ToolRisk
 from core.db import fetch, fetchrow
+from core.firebase_client import get_firestore_client
 
-# Placeholder in-memory store - still used by create_tournament and
-# manage_tournament below, which remain sandboxed (see docstring).
+# Placeholder in-memory store - still used by manage_tournament below,
+# which remains sandboxed (see docstring).
 _TOURNAMENTS: Dict[str, Dict[str, Any]] = {
     "T1": {"id": "T1", "name": "Summer Cup", "time": "19:00", "status": "scheduled"},
 }
@@ -119,17 +123,47 @@ async def read_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def create_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
-    name = context.get("tournament_name")
-    time_str = context.get("time")
+    title = context.get("tournament_name") or context.get("title")
 
-    if not name or not time_str:
-        return {"status": "error", "message": "tournament_name and time are required"}
+    if not title:
+        return {"status": "error", "message": "tournament_name (title) is required"}
 
-    new_id = f"T{len(_TOURNAMENTS) + 1}"
-    tournament = {"id": new_id, "name": name, "time": time_str, "status": "scheduled"}
-    _TOURNAMENTS[new_id] = tournament
+    game = context.get("game", "BGMI")
+    map_name = context.get("map")
+    mode = context.get("mode")
+    entry_fee = context.get("entryFee")
+    max_slots = context.get("maxSlots", 100)
+    first_prize = context.get("firstPrize", 0)
+    second_prize = context.get("secondPrize", 0)
+    third_prize = context.get("thirdPrize", 0)
+    kill_reward = context.get("killReward", 5)
+    date = context.get("date") or context.get("time")
 
-    return {"status": "created", "tournament": dict(tournament),}
+    doc_data = {
+        "title": title,
+        "game": game,
+        "map": map_name,
+        "mode": mode,
+        "entryFee": entry_fee,
+        "maxSlots": max_slots,
+        "joinedCount": 0,
+        "status": "upcoming",
+        "firstPrize": first_prize,
+        "secondPrize": second_prize,
+        "thirdPrize": third_prize,
+        "killReward": kill_reward,
+        "date": date,
+    }
+
+    db = get_firestore_client()
+    # auto-generated doc id, same as clicking "Add document" with a
+    # blank id in the Firebase console.
+    _, doc_ref = db.collection("tournaments").add(doc_data)
+
+    created = dict(doc_data)
+    created["id"] = doc_ref.id
+
+    return {"status": "created", "tournament": created}
 
 
 async def manage_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
