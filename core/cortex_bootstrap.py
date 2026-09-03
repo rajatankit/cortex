@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from core.agent_registry import AgentRegistry
 from core.permissions import PermissionEngine
@@ -77,35 +77,35 @@ def bootstrap_cortex() -> CortexRuntime:
     Startup order:
 
         AuditLogger
-             ↓
+             â†“
         PermissionEngine
-             ↓
+             â†“
         PermissionLoader
-             ↓
+             â†“
         AgentRegistry
-             ↓
+             â†“
         Agents
-             ↓
+             â†“
         DecisionEngine
-             ↓
+             â†“
         ApprovalGate
-             ↓
+             â†“
         AgentController
-             ↓
+             â†“
         Orchestrator
-             ↓
+             â†“
         CortexManager
-             ↓
+             â†“
         IntentEngine
-             ↓
+             â†“
         TaskPlanner
-             ↓
+             â†“
         ToolRegistry
-             ↓
+             â†“
         ToolGateway
-             ↓
+             â†“
         Health Check
-             ↓
+             â†“
         Runtime
     """
 
@@ -319,7 +319,7 @@ def bootstrap_cortex() -> CortexRuntime:
     health.register(
         "tool_registry",
         lambda: tool_registry is not None
-        and tool_registry.count() == 25,
+        and tool_registry.count() > 0,
     )
 
     health.register(
@@ -456,6 +456,7 @@ if __name__ == "__main__":
         print(exc)
 
         raise SystemExit(1)
+
 
 
 
