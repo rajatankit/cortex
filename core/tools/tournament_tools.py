@@ -83,6 +83,7 @@ async def read_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
 
     tournament_id = context.get("tournament_id")
     status = context.get("status")
+    game = context.get("game")
 
     if tournament_id:
         try:
@@ -107,27 +108,46 @@ async def read_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
 
         return {"status": "ok", "tournament": _serialize_tournament(row)}
 
+    # Build WHERE clause dynamically so status and/or game can combine.
+    # Game values in the DB are inconsistent ("BGMI", "Free Fire", "FF",
+    # etc.) so we match loosely rather than requiring an exact string.
+    where_parts: list[str] = []
+    params: list[Any] = []
+
     if status:
-        rows = await fetch(
-            f'''
-            SELECT {_TOURNAMENT_COLUMNS}
-            FROM tournaments
-            WHERE "status" = $1
-            ORDER BY "startTime" ASC NULLS LAST
-            LIMIT 20
-            ''',
-            status,
-        )
-    else:
-        rows = await fetch(
-            f'''
-            SELECT {_TOURNAMENT_COLUMNS}
-            FROM tournaments
-            WHERE "status" IN ('live', 'upcoming', 'ongoing')
-            ORDER BY "startTime" ASC NULLS LAST
-            LIMIT 20
-            '''
-        )
+        params.append(status)
+        where_parts.append(f'"status" = ${len(params)}')
+
+    if game:
+        g = str(game).strip().lower()
+        if g in ("ff", "free fire", "freefire", "free_fire"):
+            params.append("%free%fire%")
+            idx1 = len(params)
+            params.append("ff")
+            idx2 = len(params)
+            where_parts.append(f'("game" ILIKE ${idx1} OR "game" ILIKE ${idx2})')
+        elif g == "bgmi":
+            params.append("%bgmi%")
+            where_parts.append(f'"game" ILIKE ${len(params)}')
+        else:
+            params.append(f"%{game}%")
+            where_parts.append(f'"game" ILIKE ${len(params)}')
+
+    if not where_parts:
+        where_parts.append("\"status\" IN ('live', 'upcoming', 'ongoing')")
+
+    where_clause = " AND ".join(where_parts)
+
+    rows = await fetch(
+        f'''
+        SELECT {_TOURNAMENT_COLUMNS}
+        FROM tournaments
+        WHERE {where_clause}
+        ORDER BY "startTime" ASC NULLS LAST
+        LIMIT 20
+        ''',
+        *params,
+    )
 
     return {
         "status": "ok",
