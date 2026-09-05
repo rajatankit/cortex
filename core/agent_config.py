@@ -25,6 +25,7 @@ AGENT_CONFIGS = (
             ("create_tournament", RiskLevel.HIGH),
             ("update_tournament", RiskLevel.MEDIUM),
             ("manage_tournament", RiskLevel.MEDIUM),
+            ("delete_tournament", RiskLevel.HIGH),
         ),
     ),
 

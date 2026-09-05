@@ -292,6 +292,50 @@ async def create_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _call_tournament_bridge(action: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Generic POST to Battle Crown's /api/cortex/tournaments bridge for
+    any action (used by update_tournament / delete_tournament below;
+    create_tournament keeps its own dedicated helper above).
+    """
+    if not BATTLE_CROWN_BRIDGE_TOKEN:
+        return {
+            "status": "error",
+            "message": "BATTLE_CROWN_BRIDGE_TOKEN is not configured",
+        }
+
+    payload = json.dumps({
+        "action": action,
+        "context": context,
+    }).encode("utf-8")
+
+    request = urllib.request.Request(
+        f"{BATTLE_CROWN_BRIDGE_URL}/api/cortex/tournaments",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {BATTLE_CROWN_BRIDGE_TOKEN}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = response.read().decode("utf-8")
+            return json.loads(data)
+    except Exception as error:
+        error_body = None
+        try:
+            error_body = error.read().decode("utf-8")
+        except Exception:
+            pass
+        return {
+            "status": "error",
+            "message": str(error),
+            "response_body": error_body,
+        }
+
+
 async def manage_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
     tournament_id = context.get("tournament_id")
     updates = context.get("updates", {})
@@ -307,10 +351,60 @@ async def manage_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
     return {"status": "updated", "tournament": dict(tournament)}
 
 
+async def update_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Edits a REAL tournament (Neon + mirrored Firestore fields), found
+    via tournament_id or title. Only fields present in context are
+    changed. Renaming uses new_title - title is always the lookup key.
+    """
+    tournament_id = context.get("tournament_id")
+    title = context.get("tournament_name") or context.get("title")
+
+    if not tournament_id and not title:
+        return {
+            "status": "error",
+            "message": "tournament_id or title is required to find the tournament",
+        }
+
+    bridge_context = {
+        k: v for k, v in context.items() if v is not None and v != ""
+    }
+    if title and "title" not in bridge_context:
+        bridge_context["title"] = title
+    if tournament_id and "tournament_id" not in bridge_context:
+        bridge_context["tournament_id"] = tournament_id
+
+    return _call_tournament_bridge("update_tournament", bridge_context)
+
+
+async def delete_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Deletes a REAL tournament (Firestore doc + Neon row), found via
+    tournament_id or title. Destructive - HIGH risk, full biometric
+    approval required (see core/agent_config.py).
+    """
+    tournament_id = context.get("tournament_id")
+    title = context.get("tournament_name") or context.get("title")
+
+    if not tournament_id and not title:
+        return {
+            "status": "error",
+            "message": "tournament_id or title is required to find the tournament",
+        }
+
+    bridge_context: Dict[str, Any] = {}
+    if tournament_id:
+        bridge_context["tournament_id"] = tournament_id
+    if title:
+        bridge_context["title"] = title
+
+    return _call_tournament_bridge("delete_tournament", bridge_context)
+
+
 TOURNAMENT_TOOLS = (
     Tool(
         name="read_tournament",
-        description="Reads real tournaments (live/upcoming by default, or by id/status).",
+        description="Reads real tournaments (live/upcoming by default, or by id/status/game).",
         required_action="read_tournament",
         risk=ToolRisk.LOW,
         handler=read_tournament,
@@ -328,10 +422,32 @@ TOURNAMENT_TOOLS = (
     ),
     Tool(
         name="manage_tournament",
-        description="Updates an existing tournament (time, status, etc).",
+        description="Sandbox placeholder - updates an in-memory tournament (not real data).",
         required_action="manage_tournament",
         risk=ToolRisk.MEDIUM,
         handler=manage_tournament,
+    ),
+    Tool(
+        name="update_tournament",
+        description=(
+            "Edits a real tournament's fields (title, game, entry fee, prizes, "
+            "slots, status, start time), found by tournament_id or title. "
+            "Use when the user asks to fix/change/correct a tournament's details."
+        ),
+        required_action="update_tournament",
+        risk=ToolRisk.MEDIUM,
+        handler=update_tournament,
+    ),
+    Tool(
+        name="delete_tournament",
+        description=(
+            "Permanently deletes a real tournament (Firestore + Neon), found "
+            "by tournament_id or title. Use when the user asks to remove/"
+            "delete a wrongly created tournament."
+        ),
+        required_action="delete_tournament",
+        risk=ToolRisk.HIGH,
+        handler=delete_tournament,
     ),
 )
 

@@ -3,13 +3,18 @@ tools/nova_tools.py
 
 NOVA finance tools for CORTEX.
 
-read_wallet now reads REAL data from the Battle Crown "User" table
-in Neon Postgres (the same table the Next.js app uses via Prisma).
-Every other tool below (transactions, deposit/withdrawal status,
-suspicious-transaction reporting) is still sandbox/placeholder data -
-wire those up the same way (see read_wallet as the template) once
-you're ready, most likely against the wallet_transactions and
-withdrawal_requests tables.
+read_wallet reads REAL data from the Battle Crown "User" table in
+Neon Postgres. read_withdrawal_status now ALSO reads real data - when
+no transaction_id is given, it lists real pending (or any given
+status) rows from "withdrawal_requests", joined with "User" for
+email/name. The transaction_id-specific branch below it is still
+sandbox/placeholder (kept for backward compatibility until that path
+is wired to a real table too).
+
+read_transaction, validate_transaction, read_deposit_status, and
+report_suspicious_transaction are still sandbox/placeholder data -
+wire those up the same way (see read_wallet / read_withdrawal_status
+as the template) once you're ready.
 
 No write/mutation is ever performed here - every query is a SELECT.
 """
@@ -19,11 +24,11 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from .tool import Tool, ToolRisk
-from core.db import fetchrow
+from core.db import fetch, fetchrow
 
 
 # ============================================================
-# SANDBOX DATA (still used by the tools below read_wallet)
+# SANDBOX DATA (still used by the placeholder tools below)
 # ============================================================
 
 _TRANSACTIONS: Dict[str, Dict[str, Any]] = {
@@ -216,7 +221,8 @@ async def read_deposit_status(
 
 
 # ============================================================
-# WITHDRAWAL STATUS  (still sandbox)
+# WITHDRAWAL STATUS  (REAL DATA when listing by status;
+# sandbox fallback preserved for a specific transaction_id lookup)
 # ============================================================
 
 async def read_withdrawal_status(
@@ -224,13 +230,47 @@ async def read_withdrawal_status(
 ) -> Dict[str, Any]:
 
     transaction_id = context.get("transaction_id")
+    status = context.get("status")
 
     if not transaction_id:
+        # Real read: list withdrawal_requests by status (default
+        # "pending"), joined with User for who it belongs to.
+        status_filter = str(status or "pending").strip().lower()
+
+        rows = await fetch(
+            '''
+            SELECT
+                wr."id", wr."amount", wr."upiId", wr."status",
+                wr."createdAt", u."email", u."name", u."uid"
+            FROM "withdrawal_requests" wr
+            LEFT JOIN "User" u ON u."id" = wr."userId"
+            WHERE LOWER(wr."status") = $1
+            ORDER BY wr."createdAt" DESC
+            LIMIT 20
+            ''',
+            status_filter,
+        )
+
         return {
-            "status": "error",
-            "message": "transaction_id is required",
+            "status": "ok",
+            "withdrawals": [
+                {
+                    "id": r["id"],
+                    "amount": r["amount"],
+                    "upi_id": r["upiId"],
+                    "status": r["status"],
+                    "created_at": (
+                        r["createdAt"].isoformat() if r["createdAt"] else None
+                    ),
+                    "user_email": r["email"],
+                    "user_name": r["name"],
+                    "uid": r["uid"],
+                }
+                for r in rows
+            ],
         }
 
+    # Legacy sandbox lookup by a specific placeholder transaction id.
     transaction = _TRANSACTIONS.get(transaction_id)
 
     if transaction is None:
@@ -328,7 +368,7 @@ NOVA_TOOLS = (
 
     Tool(
         name="read_withdrawal_status",
-        description="Reads the status of a sandbox withdrawal.",
+        description="Reads real pending (or given status) withdrawal requests, or a sandbox one by transaction_id.",
         required_action="read_withdrawal_status",
         risk=ToolRisk.LOW,
         handler=read_withdrawal_status,
