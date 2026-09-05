@@ -214,19 +214,37 @@ def _call_create_tournament_bridge(context: Dict[str, Any]) -> Dict[str, Any]:
         method="POST",
     )
 
+    # ---- DEBUG: log exactly what we're sending, before the call ----
+    print(f"[TOURNAMENT DEBUG] POST {BATTLE_CROWN_BRIDGE_URL}/api/cortex/tournaments")
+    print(f"[TOURNAMENT DEBUG] bridge_context={bridge_context}")
+    print(f"[TOURNAMENT DEBUG] token_configured={bool(BATTLE_CROWN_BRIDGE_TOKEN)}")
+
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
             data = response.read().decode("utf-8")
-            return json.loads(data)
+            parsed = json.loads(data)
+            print(f"[TOURNAMENT DEBUG] bridge HTTP {response.status} response={parsed}")
+            return parsed
     except Exception as error:
+        # This branch also catches HTTPError (4xx/5xx from Next.js),
+        # which normally carries the real error body - surface it.
+        error_body = None
+        try:
+            error_body = error.read().decode("utf-8")
+        except Exception:
+            pass
+        print(f"[TOURNAMENT DEBUG] bridge call FAILED: {error} body={error_body}")
         return {
             "status": "error",
             "message": str(error),
+            "response_body": error_body,
         }
 
 
 async def create_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
+    print(f"[TOURNAMENT DEBUG] create_tournament called with context={context}")
     result = _call_create_tournament_bridge(context)
+    print(f"[TOURNAMENT DEBUG] final result={result}")
 
     # Normalize bridge response for CORTEX / speech layer
     if result.get("status") == "created":
