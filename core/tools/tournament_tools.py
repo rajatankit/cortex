@@ -82,6 +82,7 @@ _TOURNAMENT_COLUMNS = '''
 async def read_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
 
     tournament_id = context.get("tournament_id")
+    title = context.get("title") or context.get("tournament_name")
     status = context.get("status")
     game = context.get("game")
 
@@ -107,6 +108,31 @@ async def read_tournament(context: Dict[str, Any]) -> Dict[str, Any]:
             return {"status": "not_found", "tournament_id": tournament_id}
 
         return {"status": "ok", "tournament": _serialize_tournament(row)}
+
+    # Title-based lookup (e.g. "F1 tournament mein kitne players hain") -
+    # matches loosely with ILIKE since spoken/typed titles are rarely exact.
+    if title:
+        rows = await fetch(
+            f'''
+            SELECT {_TOURNAMENT_COLUMNS}
+            FROM tournaments
+            WHERE "title" ILIKE $1
+            ORDER BY "startTime" DESC NULLS LAST
+            LIMIT 5
+            ''',
+            f"%{title}%",
+        )
+
+        if not rows:
+            return {"status": "not_found", "title": title}
+
+        if len(rows) == 1:
+            return {"status": "ok", "tournament": _serialize_tournament(rows[0])}
+
+        return {
+            "status": "ok",
+            "tournaments": [_serialize_tournament(row) for row in rows],
+        }
 
     # Build WHERE clause dynamically so status and/or game can combine.
     # Game values in the DB are inconsistent ("BGMI", "Free Fire", "FF",
