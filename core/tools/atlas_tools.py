@@ -13,11 +13,12 @@ If a bare filename is given (no "/" in it, e.g. "tournament_tools.py")
 instead of a full path, both branches search for the first matching
 file by name before reading it - "code ka naam lu, vo mujhe de de".
 
-modify_code is still a placeholder. The plan (once GITHUB_TOKEN is
-confirmed working for reads) is a PR-based flow: ATLAS drafts the
-change, opens a branch + pull request on GitHub instead of pushing
-straight to main, so Boss reviews and merges it manually - not wired
-up yet.
+commit_code pushes a full file's new content directly to the
+battle-crown repo's default branch via the GitHub Contents API.
+Boss reviews the generated code in CORTEX (see
+app/api/personal/command/route.js's ATLAS options -> preview ->
+confirm flow) before this ever runs, and it's HIGH risk so it also
+goes through biometric/voice approval.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ import urllib.request
 from typing import Any
 
 from core.tools.tool import Tool, ToolRisk
+from core.tools.vercel_monitor import check_deployment_status
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_BATTLECROWN_REPO = os.getenv("GITHUB_BATTLECROWN_REPO", "")
@@ -162,6 +164,154 @@ def _normalize_repo(repo_raw: str) -> str:
     return "cortex"
 
 
+def _get_file_sha(path: str) -> str | None:
+    url = (
+        f"https://api.github.com/repos/{GITHUB_BATTLECROWN_REPO}"
+        f"/contents/{path}?ref={GITHUB_BRANCH}"
+    )
+    try:
+        data = _github_request(url)
+        return data.get("sha")
+    except Exception:
+        return None
+
+
+async def commit_code(context: dict[str, Any] | None = None) -> dict[str, Any]:
+    """
+    High-risk: commits a full file's new content directly to the
+    battle-crown repo's default branch via the GitHub Contents API.
+    Boss has already reviewed the code in CORTEX before this runs
+    (see app/api/personal/command/route.js's ATLAS preview/confirm flow).
+
+    Returns previous_content and commit_sha so the caller can track
+    this commit and revert it later if the Vercel build fails.
+    """
+    context = context or {}
+    path = context.get("path")
+    code = context.get("code")
+    message = context.get("message") or "CORTEX/ATLAS automated change"
+
+    if not path or code is None:
+        return {"status": "error", "message": "path and code are required"}
+
+    if not GITHUB_TOKEN or not GITHUB_BATTLECROWN_REPO:
+        return {
+            "status": "error",
+            "message": "GitHub not configured (GITHUB_TOKEN/GITHUB_BATTLECROWN_REPO)",
+        }
+
+    # Capture the current content BEFORE overwriting, so we can revert later.
+    previous_content = None
+    existing = _read_battlecrown_file(path)
+    if existing.get("status") == "ok":
+        previous_content = existing.get("content")
+
+    sha = _get_file_sha(path)
+
+    body: dict[str, Any] = {
+        "message": message,
+        "content": base64.b64encode(code.encode("utf-8")).decode("ascii"),
+        "branch": GITHUB_BRANCH,
+    }
+    if sha:
+        body["sha"] = sha
+
+    data = json.dumps(body).encode("utf-8")
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{GITHUB_BATTLECROWN_REPO}/contents/{path}",
+        data=data,
+        headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "cortex-atlas",
+            "Content-Type": "application/json",
+        },
+        method="PUT",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            commit_sha = (result.get("commit") or {}).get("sha")
+            return {
+                "status": "committed",
+                "success": True,
+                "commit_url": (result.get("commit") or {}).get("html_url"),
+                "commit_sha": commit_sha,
+                "previous_content": previous_content,
+            }
+    except urllib.error.HTTPError as error:
+        body_text = None
+        try:
+            body_text = error.read().decode("utf-8")
+        except Exception:
+            pass
+        return {"status": "error", "message": f"GitHub HTTP {error.code}", "body": body_text}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
+    """
+    High-risk: commits a full file's new content directly to the
+    battle-crown repo's default branch via the GitHub Contents API.
+    Boss has already reviewed the code in CORTEX before this runs
+    (see app/api/personal/command/route.js's ATLAS preview/confirm flow).
+    """
+    context = context or {}
+    path = context.get("path")
+    code = context.get("code")
+    message = context.get("message") or "CORTEX/ATLAS automated change"
+
+    if not path or code is None:
+        return {"status": "error", "message": "path and code are required"}
+
+    if not GITHUB_TOKEN or not GITHUB_BATTLECROWN_REPO:
+        return {
+            "status": "error",
+            "message": "GitHub not configured (GITHUB_TOKEN/GITHUB_BATTLECROWN_REPO)",
+        }
+
+    sha = _get_file_sha(path)
+
+    body: dict[str, Any] = {
+        "message": message,
+        "content": base64.b64encode(code.encode("utf-8")).decode("ascii"),
+        "branch": GITHUB_BRANCH,
+    }
+    if sha:
+        body["sha"] = sha
+
+    data = json.dumps(body).encode("utf-8")
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{GITHUB_BATTLECROWN_REPO}/contents/{path}",
+        data=data,
+        headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "cortex-atlas",
+            "Content-Type": "application/json",
+        },
+        method="PUT",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            return {
+                "status": "committed",
+                "success": True,
+                "commit_url": (result.get("commit") or {}).get("html_url"),
+            }
+    except urllib.error.HTTPError as error:
+        body_text = None
+        try:
+            body_text = error.read().decode("utf-8")
+        except Exception:
+            pass
+        return {"status": "error", "message": f"GitHub HTTP {error.code}", "body": body_text}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
+
 # ============================================================
 # READ CODE  (REAL DATA - both repos)
 # ============================================================
@@ -199,17 +349,15 @@ async def read_code(
 
 
 # ============================================================
-# MODIFY CODE  (still placeholder - see module docstring)
+# MODIFY CODE  (deprecated placeholder - use commit_code instead)
 # ============================================================
 
 async def modify_code(
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    High-risk engineering operation.
-
-    Actual code modification must only occur after
-    authorization and approval through CORTEX.
+    Legacy placeholder - the real flow now goes through commit_code
+    once Boss has reviewed the generated code in CORTEX.
     """
 
     context = context or {}
@@ -252,5 +400,30 @@ def register_atlas_tools(tool_registry) -> None:
                 required_action="modify_code",
                 risk=ToolRisk.HIGH,
                 handler=modify_code,
+            )
+        )
+
+    if not tool_registry.exists("commit_code"):
+        tool_registry.register(
+            Tool(
+                name="commit_code",
+                description=(
+                    "Commits generated code directly to the battle-crown repo "
+                    "after Boss has reviewed it in CORTEX."
+                ),
+                required_action="commit_code",
+                risk=ToolRisk.HIGH,
+                handler=commit_code,
+            )
+        )
+
+    if not tool_registry.exists("check_deployment_status"):
+        tool_registry.register(
+            Tool(
+                name="check_deployment_status",
+                description="Checks Vercel build status for a given commit SHA (used by ATLAS build monitor cron).",
+                required_action="check_deployment_status",
+                risk=ToolRisk.LOW,
+                handler=check_deployment_status,
             )
         )
